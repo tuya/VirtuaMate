@@ -1,0 +1,65 @@
+name: DuckyClaw Check Build
+run-name: ${{ github.actor }} triggered build check
+on:
+  push:
+  pull_request:
+jobs:
+  Check-Build:
+    runs-on: ubuntu-latest
+    env:
+      OPEN_COUNTRY_CODE: "NONE"
+      BUILD_LOG_BASE: ${{ github.workspace }}/tmp/logs/build_logs_${{ github.run_number }}
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          show-progress: false
+          submodules: true
+
+      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
+      - run: echo "🐧 Running on ${{ runner.os }}, branch is ${{ github.ref }} !"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            wget git lcov cmake ninja-build \
+            build-essential \
+            python3 python3-pip python3-venv \
+            libc6-i386 libsystemd-dev
+
+      - name: Check Base Tools
+        run: |
+          echo "::group::Checking base tools"
+          cd ${{ github.workspace }}/TuyaOpen
+          . ./export.sh
+          cd ${{ github.workspace }}
+          tos.py version
+          rm -rf ${{ github.workspace }}/dist
+          echo "::endgroup::"
+
+      - name: Build All Board Configs
+        env:
+          BUILD_LOG_DIR: ${{ env.BUILD_LOG_BASE }}/all_configs
+        run: |
+          echo "::group::Building all board configs"
+          cd ${{ github.workspace }}/TuyaOpen
+          . ./export.sh
+          mkdir -p .cache && touch .cache/.dont_prompt_update_platform
+          cd ${{ github.workspace }}
+          tos.py dev bac -d ${{ github.workspace }}/dist -o "$BUILD_LOG_DIR"
+          echo "::endgroup::"
+
+      - name: Set timestamp
+        id: timestamp
+        if: always()
+        run: echo "timestamp=$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Upload Log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build_logs_${{ github.run_number }}_${{ steps.timestamp.outputs.timestamp }}
+          path: ${{ env.BUILD_LOG_BASE }}
+          retention-days: 90
+          if-no-files-found: warn
