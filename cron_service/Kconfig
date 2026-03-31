@@ -1,0 +1,7 @@
+menu "Cron Service Config"
+    config CRON_THREAD_STACK
+        int "Cron thread stack size (bytes)"
+        default 6144
+        help
+            Stack size in bytes for the cron scheduler thread (default 6*1024).
+endmenu

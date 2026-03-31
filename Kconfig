@@ -1,0 +1,62 @@
+menu "configure app (DuckyClaw) "
+
+rsource "./ai_components/Kconfig"
+rsource "./cron_service/Kconfig"
+rsource "./gateway/Kconfig"
+rsource "./IM/Kconfig"
+rsource "./agent/Kconfig"
+rsource "./tools/Kconfig"
+
+menu "VRM Viewer Config"
+
+config VRM_MODEL_PATH
+    string "3D model file path (VRM/PMX/GLB/FBX)"
+    default "/home/pi/avatar.vrm"
+    help
+      Path to the 3D model file to load on the Raspberry Pi.
+      Supported formats: VRM, PMX, GLB, GLTF, FBX, OBJ, etc.
+
+config VRM_ANIM_DIR
+    string "VRMA animation directory (optional)"
+    default ""
+    help
+      Path to a directory containing .vrma animation files.
+      All .vrma files will be loaded and can be switched at runtime.
+      Leave empty for no animation (static pose).
+
+config VRM_WINDOW_WIDTH
+    int "VRM viewer window width"
+    default 1024
+
+config VRM_WINDOW_HEIGHT
+    int "VRM viewer window height"
+    default 768
+
+config VRM_FULLSCREEN
+    bool "Start VRM viewer in fullscreen"
+    default n
+
+config VRM_SCENE_DIR
+    string "Scene directory (skybox cubemap images)"
+    default ""
+    help
+      Path to a directory containing cubemap face images for the skybox.
+      The directory should contain 6 images named by any of these conventions:
+        right/left/top/bottom/front/back  (.jpg/.png/.bmp/.tga)
+        px/nx/py/ny/pz/nz                (.jpg/.png/.bmp/.tga)
+        posx/negx/posy/negy/posz/negz    (.jpg/.png/.bmp/.tga)
+      Leave empty to use the default gradient background.
+
+config VRM_SCENE_PARENT_DIR
+    string "Scene parent directory (contains skybox folders)"
+    default ""
+    help
+      Parent directory that contains multiple skybox cubemap sub-directories.
+      The settings overlay will scan this directory and list every sub-directory
+      as a selectable scene. Each sub-directory must contain 6 cubemap face
+      images (same naming convention as VRM_SCENE_DIR).
+      If empty, the parent of VRM_SCENE_DIR is used as fallback.
+
+endmenu
+
+endmenu
