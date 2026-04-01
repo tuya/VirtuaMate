@@ -32,62 +32,58 @@ static OPERATE_RET __ai_mcp_init(void *data)
 {
     OPERATE_RET rt = OPRT_OK;
 
-    #if defined(PLATFORM_LINUX) && (PLATFORM_LINUX == 1)
-        rt = ai_mcp_server_init("DuckyClaw MCP Server", "1.0");
-        if (rt != OPRT_OK) {
-            return rt;
-        }
-    #endif
+    TUYA_CALL_ERR_RETURN(ai_mcp_server_init("DuckyClaw MCP Server", "1.0"));
 
-    /* Initialize filesystem (mount SD card if needed, create default files) */
     TUYA_CALL_ERR_RETURN(tool_files_fs_init());
 
-    /* Initialize and start cron service */
     TUYA_CALL_ERR_LOG(cron_service_init());
     TUYA_CALL_ERR_LOG(cron_service_start());
 
-    /* Initialize and start heartbeat service */
     TUYA_CALL_ERR_LOG(heartbeat_init());
     TUYA_CALL_ERR_LOG(heartbeat_start());
 
-    /* Initialize memory and session managers */
     TUYA_CALL_ERR_LOG(memory_manager_init());
     TUYA_CALL_ERR_LOG(session_manager_init());
 
-    /* Initialize skill loader (creates dir + installs built-in skills) */
     TUYA_CALL_ERR_LOG(skill_loader_init());
 
-    /* Register file operation tools */
     TUYA_CALL_ERR_RETURN(tool_files_register());
-
-    /* Register cron tools */
     TUYA_CALL_ERR_RETURN(tool_cron_register());
 
-    /* Register exec/system tools */
     #if defined(PLATFORM_LINUX) && (PLATFORM_LINUX == 1)
     TUYA_CALL_ERR_RETURN(tool_exec_register());
     #endif
 
-    /* Register OpenClaw/PC control tool */
     TUYA_CALL_ERR_RETURN(tool_openclaw_ctrl_register());
 
-    PR_DEBUG("MCP Server initialized successfully with tools");
+    PR_NOTICE("DuckyClaw MCP tools all registered");
     return rt;
 }
 
 /**
+ * @brief Re-register the MCP callback on every MQTT reconnect.
+ *
+ * The AI agent re-initialises on each MQTT connected event, which clears
+ * the MCP callback set during ai_mcp_server_init.  This NORMAL (persistent)
+ * handler ensures the callback is restored after every agent re-init.
+ */
+static OPERATE_RET __ai_mcp_ensure_cb(void *data)
+{
+    (void)data;
+    ai_mcp_server_init("DuckyClaw MCP Server", "1.0");
+    return OPRT_OK;
+}
+
+/**
  * @brief Initialize and register all MCP tools
- *
- * This function is called during MCP server initialization to register
- * all custom tools for the DuckyClaw project.
- *
- * @return OPERATE_RET OPRT_OK on success, error code on failure
+ * @return OPRT_OK on success, error code on failure
  */
 OPERATE_RET tool_registry_init(void)
 {
     OPERATE_RET rt = OPRT_OK;
 
-    tal_event_subscribe(EVENT_MQTT_CONNECTED, "ai_mcp_init", __ai_mcp_init, SUBSCRIBE_TYPE_ONETIME);
+    tal_event_subscribe(EVENT_MQTT_CONNECTED, "ducky_claw_mcp_init", __ai_mcp_init, SUBSCRIBE_TYPE_ONETIME);
+    tal_event_subscribe(EVENT_MQTT_CONNECTED, "ducky_claw_mcp_cb", __ai_mcp_ensure_cb, SUBSCRIBE_TYPE_NORMAL);
 
     PR_DEBUG("DuckyClaw MCP tools registered successfully");
 

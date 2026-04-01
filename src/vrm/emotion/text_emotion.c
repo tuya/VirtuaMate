@@ -324,7 +324,6 @@ static void __check_revert(void)
     if ((now - s_revert_at_ms) < KEYWORD_DECAY_MS) {
         return;
     }
-    printf("[text_emo] keyword decay -> revert to base \"%s\"\n", s_base_emo);
     vrm_viewer_set_emotion(s_base_emo, 1.0f, 0.0f);
     s_current_emo    = s_base_emo;
     s_in_keyword_emo = 0;
@@ -367,8 +366,6 @@ static void __scan_and_apply(const char *sentence, int len)
     }
 
     if (best_emotion && strcmp(best_emotion, s_current_emo) != 0) {
-        printf("[text_emo] \"%.*s\" -> %s (pri=%d)\n",
-               len > 40 ? 40 : len, sentence, best_emotion, best_priority);
         vrm_viewer_set_emotion(best_emotion, 1.0f, 0.0f);
         s_current_emo    = best_emotion;
         s_last_switch_ms = now;
@@ -417,7 +414,6 @@ void text_emotion_set_base(const char *emotion)
     s_current_emo    = s_base_emo;
     s_in_keyword_emo = 0;
     s_revert_at_ms   = 0;
-    printf("[text_emo] base emotion set: \"%s\"\n", s_base_emo);
 }
 
 /**
@@ -467,7 +463,6 @@ void text_emotion_flush(void)
     }
 
     if (s_in_keyword_emo) {
-        printf("[text_emo] flush -> revert to base \"%s\"\n", s_base_emo);
         vrm_viewer_set_emotion(s_base_emo, 1.0f, 0.0f);
         s_current_emo    = s_base_emo;
         s_in_keyword_emo = 0;

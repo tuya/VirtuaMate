@@ -140,6 +140,9 @@
                     "- Searching the web -> web_search\n\n");
  
     off += snprintf(buf + off, size - off,
+                        "- avatar_play_animation: Trigger a body animation on the 3D avatar.\n"
+                        "- avatar_set_emotion: Set the avatar's facial expression.\n"
+                        "- avatar_composite_action: Set animation and emotion in a single call.\n\n");
                         "## Avatar Behavior\n"
                         "The device has a 3D avatar. You control it via tool calls.\n"
                         "Your text is spoken by TTS verbatim — NEVER write tool names "

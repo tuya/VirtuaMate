@@ -768,7 +768,7 @@ void ai_mcp_server_set_tool_exec_hook(MCP_TOOL_EXEC_HOOK_CB cb, void *user_data)
 OPERATE_RET ai_mcp_server_init(const char *name, const char *version)
 {
     if (s_server_ctx.initialized) {
-        PR_WARN("MCP server already initialized");
+        tuya_ai_agent_mcp_set_cb(ai_mcp_server_parse_message, NULL);
         return OPRT_OK;
     }
 
@@ -796,6 +796,7 @@ OPERATE_RET ai_mcp_server_init(const char *name, const char *version)
     s_server_ctx.send_message = __send_message_default;
     tuya_ai_agent_mcp_set_cb(ai_mcp_server_parse_message, NULL);
     s_server_ctx.initialized = TRUE;
+    PR_NOTICE("MCP server initialized: %s v%s", name, version);
     return OPRT_OK;
 }
 

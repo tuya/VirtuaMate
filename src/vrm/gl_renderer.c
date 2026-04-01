@@ -246,7 +246,6 @@ void vrm_viewer_play_animation(const char *name)
     s_anim_req_name[ANIM_NAME_MAX - 1] = '\0';
     s_anim_req_return_to_idle = 1;
     s_anim_req_pending = 1;
-    printf("[vrm] animation request: %s\n", s_anim_req_name);
 }
 
 void vrm_viewer_set_emotion(const char *name, float intensity, float speed)
@@ -258,8 +257,6 @@ void vrm_viewer_set_emotion(const char *name, float intensity, float speed)
     s_emo_req_intensity = intensity;
     s_emo_req_speed     = speed;
     s_emo_req_pending   = 1;
-    printf("[vrm] emotion request: %s (intensity=%.2f, speed=%.1f)\n",
-           name, intensity, speed);
 }
 
 void vrm_viewer_set_blendshape(const char *expr_name, float weight)
@@ -294,7 +291,6 @@ void vrm_viewer_reload_model(const char *model_path)
     strncpy(s_reload_model_path, model_path, RELOAD_PATH_MAX - 1);
     s_reload_model_path[RELOAD_PATH_MAX - 1] = '\0';
     s_reload_model_pending = 1;
-    printf("[vrm] model reload requested: %s\n", model_path);
 }
 
 void vrm_viewer_reload_scene(const char *scene_dir)
@@ -306,8 +302,6 @@ void vrm_viewer_reload_scene(const char *scene_dir)
         s_reload_scene_dir[RELOAD_PATH_MAX - 1] = '\0';
     }
     s_reload_scene_pending = 1;
-    printf("[vrm] scene reload requested: %s\n",
-           scene_dir && scene_dir[0] ? scene_dir : "(none)");
 }
 
 #ifdef VRM_WINDOW_WIDTH
@@ -337,12 +331,9 @@ static const char *s_model_vs =
     "\n"
     "uniform mat4 u_mvp;\n"
     "uniform mat4 u_model;\n"
-    "uniform mat3 u_normal_mat;\n"
     "uniform int  u_skinned;\n"
     "uniform samplerBuffer u_bone_tbo;\n"
     "\n"
-    "out vec3 v_normal;\n"
-    "out vec3 v_frag_pos;\n"
     "out vec2 v_uv;\n"
     "\n"
     "mat4 getBoneMatrix(int idx) {\n"
@@ -371,21 +362,14 @@ static const char *s_model_vs =
     "    }\n"
     "\n"
     "    gl_Position = u_mvp * pos;\n"
-    "    v_frag_pos  = vec3(u_model * pos);\n"
-    "    v_normal    = u_normal_mat * norm4.xyz;\n"
     "    v_uv        = a_uv;\n"
     "}\n";
 
 static const char *s_model_fs =
     "#version 140\n"
-    "in vec3 v_normal;\n"
-    "in vec3 v_frag_pos;\n"
     "in vec2 v_uv;\n"
     "out vec4 frag_color;\n"
-    "uniform vec3  u_light_dir;\n"
-    "uniform vec3  u_light_color;\n"
     "uniform vec4  u_base_color;\n"
-    "uniform vec3  u_view_pos;\n"
     "uniform sampler2D u_texture;\n"
     "uniform int   u_has_texture;\n"
     "void main() {\n"
@@ -396,20 +380,7 @@ static const char *s_model_fs =
     "        base = u_base_color;\n"
     "    }\n"
     "    if (base.a < 0.1) discard;\n"
-    "    vec3 norm = normalize(v_normal);\n"
-    "    vec3 ambient = 0.55 * u_light_color;\n"
-    "    float diff = max(dot(norm, u_light_dir), 0.0);\n"
-    "    diff = diff * 0.5 + 0.5;\n"
-    "    vec3 diffuse = diff * 0.45 * u_light_color;\n"
-    "    vec3 view_dir  = normalize(u_view_pos - v_frag_pos);\n"
-    "    vec3 half_dir  = normalize(u_light_dir + view_dir);\n"
-    "    float spec     = pow(max(dot(norm, half_dir), 0.0), 128.0);\n"
-    "    vec3 specular  = 0.06 * spec * u_light_color;\n"
-    "    float rim = 1.0 - max(dot(norm, view_dir), 0.0);\n"
-    "    rim = smoothstep(0.55, 1.0, rim);\n"
-    "    vec3 rim_color = rim * 0.12 * vec3(0.6, 0.7, 1.0);\n"
-    "    vec3 result = (ambient + diffuse + specular) * base.rgb + rim_color;\n"
-    "    frag_color = vec4(result, base.a);\n"
+    "    frag_color = base;\n"
     "}\n";
 
 /* ---- grid shader ---- */
@@ -538,6 +509,60 @@ static const char *s_ground_shadow_fs =
     "    float dist = length(v_world.xz - u_center.xz) / u_radius;\n"
     "    float fade = smoothstep(1.0, 0.2, dist);\n"
     "    frag_color = vec4(0.0, 0.0, 0.05, shadow * 0.45 * fade);\n"
+    "}\n";
+
+/* ---- inverted-hull outline shader ---- */
+static const char *s_outline_vs =
+    "#version 140\n"
+    "#extension GL_ARB_explicit_attrib_location : enable\n"
+    "layout(location=0) in vec3 a_pos;\n"
+    "layout(location=1) in vec3 a_normal;\n"
+    "layout(location=3) in vec4 a_bone_ids;\n"
+    "layout(location=4) in vec4 a_bone_weights;\n"
+    "\n"
+    "uniform mat4 u_mvp;\n"
+    "uniform int  u_skinned;\n"
+    "uniform float u_outline_width;\n"
+    "uniform samplerBuffer u_bone_tbo;\n"
+    "\n"
+    "mat4 getBoneMatrix(int idx) {\n"
+    "    int base = idx * 4;\n"
+    "    return mat4(\n"
+    "        texelFetch(u_bone_tbo, base + 0),\n"
+    "        texelFetch(u_bone_tbo, base + 1),\n"
+    "        texelFetch(u_bone_tbo, base + 2),\n"
+    "        texelFetch(u_bone_tbo, base + 3)\n"
+    "    );\n"
+    "}\n"
+    "\n"
+    "void main() {\n"
+    "    vec4 pos = vec4(a_pos, 1.0);\n"
+    "    vec4 norm4 = vec4(a_normal, 0.0);\n"
+    "\n"
+    "    if (u_skinned != 0) {\n"
+    "        mat4 skin = mat4(0.0);\n"
+    "        ivec4 ids = ivec4(a_bone_ids);\n"
+    "        skin += a_bone_weights.x * getBoneMatrix(ids.x);\n"
+    "        skin += a_bone_weights.y * getBoneMatrix(ids.y);\n"
+    "        skin += a_bone_weights.z * getBoneMatrix(ids.z);\n"
+    "        skin += a_bone_weights.w * getBoneMatrix(ids.w);\n"
+    "        pos  = skin * pos;\n"
+    "        norm4 = skin * norm4;\n"
+    "    }\n"
+    "\n"
+    "    vec4 clip = u_mvp * pos;\n"
+    "    vec3 cn = mat3(u_mvp) * normalize(norm4.xyz);\n"
+    "    vec2 d = normalize(cn.xy) * u_outline_width * clip.w;\n"
+    "    clip.xy += d;\n"
+    "    gl_Position = clip;\n"
+    "}\n";
+
+static const char *s_outline_fs =
+    "#version 140\n"
+    "out vec4 frag_color;\n"
+    "uniform vec4 u_outline_color;\n"
+    "void main() {\n"
+    "    frag_color = u_outline_color;\n"
     "}\n";
 
 /* ================================================================== */
@@ -1053,7 +1078,7 @@ static void __on_scene_change(const char *dir, void *user_data)
 static void __on_camera_lock(int locked, void *user_data)
 {
     (void)user_data;
-    printf("[vrm] camera lock: %s\n", locked ? "ON" : "OFF");
+    (void)locked;
 }
 
 /**
@@ -1065,7 +1090,7 @@ static void __on_camera_lock(int locked, void *user_data)
 static void __on_subtitle_toggle(int enabled, void *user_data)
 {
     (void)user_data;
-    printf("[vrm] subtitle: %s\n", enabled ? "ON" : "OFF");
+    (void)enabled;
 }
 
 /**
@@ -1254,11 +1279,9 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
     printf("[vrm_viewer] GL renderer: %s\n", glGetString(GL_RENDERER));
 
     /* ---- compile shaders ---- */
-    GLuint model_prog         = __link_program(s_model_vs, s_model_fs);
-    GLuint grid_prog          = __link_program(s_grid_vs, s_grid_fs);
-    GLuint bg_prog            = __link_program(s_bg_vs, s_bg_fs);
-    GLuint shadow_prog        = __link_program(s_shadow_vs, s_shadow_fs);
-    GLuint ground_shadow_prog = __link_program(s_ground_shadow_vs, s_ground_shadow_fs);
+    GLuint model_prog = __link_program(s_model_vs, s_model_fs);
+    GLuint grid_prog  = __link_program(s_grid_vs, s_grid_fs);
+    GLuint bg_prog    = __link_program(s_bg_vs, s_bg_fs);
 
     /* ---- upload meshes ---- */
     gpu_mesh_t *gpu = (gpu_mesh_t *)calloc(model.mesh_count, sizeof(gpu_mesh_t));
@@ -1269,8 +1292,7 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
 
     __create_grid();
     __create_bg_quad();
-    __create_shadow_fbo();
-    __create_ground_quad();
+    /* Outline and shadow effects are disabled. */
 
     /* ---- Skybox (cubemap) ---- */
     skybox_t skybox;
@@ -1521,13 +1543,10 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                             active_anim = first_vrma_anim + (uint32_t)anim_idx;
                             idle_last_pick = anim_idx;
                             idle_is_oneshot = __is_oneshot(anim_names[anim_idx]);
-                            printf("[vrm_viewer] animation -> %s (idx=%u)\n",
-                                   anim_names[anim_idx], active_anim);
                         } else {
                             anim_idx = ((int)active_anim + step + anim_total) % anim_total;
                             active_anim = (uint32_t)anim_idx;
                             idle_is_oneshot = 0;
-                            printf("[vrm_viewer] animation -> embedded[%d]\n", anim_idx);
                         }
 
                         has_anim = 1;
@@ -1542,7 +1561,6 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                     cur_emo = (emotion_id_t)((int)cur_emo + 1);
                     if ((int)cur_emo >= EMOTION__COUNT) cur_emo = EMOTION_NEUTRAL;
                     emotion_set(&emo_ctx, cur_emo);
-                    printf("[vrm_viewer] emotion: %s\n", emotion_name(cur_emo));
                 }
                 /* F1-F6: direct emotion set */
                 if (ev.key.keysym.sym >= SDLK_F1 && ev.key.keysym.sym <= SDLK_F6) {
@@ -1550,24 +1568,20 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                     if ((int)eid < EMOTION__COUNT) {
                         cur_emo = eid;
                         emotion_set(&emo_ctx, cur_emo);
-                        printf("[vrm_viewer] emotion: %s\n", emotion_name(cur_emo));
                     }
                 }
                 /* B key: toggle auto-blink */
                 if (ev.key.keysym.sym == SDLK_b) {
                     emo_ctx.auto_blink = !emo_ctx.auto_blink;
-                    printf("[vrm_viewer] auto-blink: %s\n", emo_ctx.auto_blink ? "ON" : "OFF");
                 }
                 /* T key: toggle speaking */
                 if (ev.key.keysym.sym == SDLK_t) {
                     emotion_set_speaking(&emo_ctx, !emo_ctx.speaking);
-                    printf("[vrm_viewer] speaking: %s\n", emo_ctx.speaking ? "ON" : "OFF");
                 }
                 /* P key: toggle spring bone physics */
                 if (ev.key.keysym.sym == SDLK_p) {
                     spring_ctx.enabled = !spring_ctx.enabled;
-                    if (!spring_ctx.enabled) spring_ctx.initialized = 0; /* reset on re-enable */
-                    printf("[vrm_viewer] spring bones: %s\n", spring_ctx.enabled ? "ON" : "OFF");
+                    if (!spring_ctx.enabled) spring_ctx.initialized = 0;
                 }
                 /* Spring bone parameter tuning:
                  *   A / S : decrease / increase stiffness
@@ -1587,7 +1601,7 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                     }
                     float val = spring_ctx.chain_count > 0 && spring_ctx.chains[0].joint_count > 0
                         ? spring_ctx.chains[0].joints[0].stiffness : 0;
-                    printf("[spring] stiffness = %.2f\n", val);
+                    (void)val;
                 }
                 if (ev.key.keysym.sym == SDLK_d || ev.key.keysym.sym == SDLK_f) {
                     float delta = (ev.key.keysym.sym == SDLK_f) ? 0.05f : -0.05f;
@@ -1602,7 +1616,7 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                     }
                     float val = spring_ctx.chain_count > 0 && spring_ctx.chains[0].joint_count > 0
                         ? spring_ctx.chains[0].joints[0].drag_force : 0;
-                    printf("[spring] drag = %.2f\n", val);
+                    (void)val;
                 }
                 if (ev.key.keysym.sym == SDLK_g || ev.key.keysym.sym == SDLK_h) {
                     float delta = (ev.key.keysym.sym == SDLK_h) ? 0.05f : -0.05f;
@@ -1615,7 +1629,7 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                     }
                     float val = spring_ctx.chain_count > 0 && spring_ctx.chains[0].joint_count > 0
                         ? spring_ctx.chains[0].joints[0].gravity_power : 0;
-                    printf("[spring] gravity_power = %.2f\n", val);
+                    (void)val;
                 }
                 if (ev.key.keysym.sym == SDLK_j || ev.key.keysym.sym == SDLK_k) {
                     float delta = (ev.key.keysym.sym == SDLK_k) ? 0.005f : -0.005f;
@@ -1628,7 +1642,7 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                     }
                     float val = spring_ctx.chain_count > 0 && spring_ctx.chains[0].joint_count > 0
                         ? spring_ctx.chains[0].joints[0].hit_radius : 0;
-                    printf("[spring] hit_radius = %.3f\n", val);
+                    (void)val;
                 }
                 if (ev.key.keysym.sym == SDLK_l) {
                     /* Reset spring bone params to VRM defaults */
@@ -1643,18 +1657,15 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                             spring_ctx.chains[ci].joints[ji].hit_radius    = sg->joints[ji].hit_radius;
                         }
                     }
-                    spring_ctx.initialized = 0; /* force re-init */
-                    printf("[spring] parameters reset to VRM defaults\n");
+                    spring_ctx.initialized = 0;
                 }
                 /* F11: toggle fullscreen */
                 if (ev.key.keysym.sym == SDLK_F11) {
                     Uint32 flags = SDL_GetWindowFlags(window);
                     if (flags & SDL_WINDOW_FULLSCREEN_DESKTOP) {
                         SDL_SetWindowFullscreen(window, 0);
-                        printf("[vrm_viewer] fullscreen: OFF\n");
                     } else {
                         SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
-                        printf("[vrm_viewer] fullscreen: ON\n");
                     }
                 }
                 /* 1-9: raw expression toggle (for debugging) */
@@ -1664,8 +1675,6 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                         float cur = model.expression_weights[expr_idx];
                         float nw = (cur < 0.5f) ? 1.0f : 0.0f;
                         vrm_set_expression_weight(&model, expr_idx, nw);
-                        printf("[vrm_viewer] expression[%d] '%s' = %.1f\n",
-                               expr_idx, model.expressions[expr_idx].name, nw);
                     }
                 }
                 break;
@@ -1688,8 +1697,6 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                     idle_is_oneshot = req_return_to_idle || __is_oneshot(anim_names[ni]);
                     idle_next_switch = SDL_GetTicks() +
                         __rand_interval_ms(IDLE_SWITCH_MIN_SEC, IDLE_SWITCH_MAX_SEC);
-                    printf("[vrm] playing animation: %s (idx=%u, oneshot=%d, return_to_idle=%d)\n",
-                           s_anim_req_name, active_anim, idle_is_oneshot, req_return_to_idle);
                     break;
                 }
             }
@@ -1704,9 +1711,8 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                 emotion_set_intensity(&emo_ctx, s_emo_req_intensity);
                 emotion_set_ex(&emo_ctx, (emotion_id_t)eid, s_emo_req_speed);
                 cur_emo = (emotion_id_t)eid;
-                printf("[vrm] emotion set: %s (id=%d)\n", s_emo_req_name, eid);
             } else {
-                printf("[vrm] emotion not found: %s\n", s_emo_req_name);
+                fprintf(stderr, "[vrm] emotion not found: %s\n", s_emo_req_name);
             }
         }
 
@@ -1773,7 +1779,6 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
             first_vrma_anim = 0;
 
             /* Load new model */
-            printf("[vrm] reloading model: %s\n", s_reload_model_path);
             if (vrm_model_load(&model, s_reload_model_path) != 0) {
                 fprintf(stderr, "[vrm] reload failed\n");
                 running = false;
@@ -1890,8 +1895,6 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
             idle_next_emotion = SDL_GetTicks() +
                 __rand_interval_ms(IDLE_EMOTION_MIN_SEC, IDLE_EMOTION_MAX_SEC);
 
-            printf("[vrm] model reloaded: %u meshes, %u bones, %d anims\n",
-                   model.mesh_count, bone_count, anim_name_count);
             continue;
         }
 
@@ -1901,12 +1904,7 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
             skybox_destroy(&skybox);
             memset(&skybox, 0, sizeof(skybox));
             if (s_reload_scene_dir[0] != '\0') {
-                printf("[vrm] loading new skybox: %s\n", s_reload_scene_dir);
-                if (skybox_init(&skybox, s_reload_scene_dir) != 0) {
-                    printf("[vrm] skybox load failed — gradient background\n");
-                }
-            } else {
-                printf("[vrm] skybox disabled — gradient background\n");
+                skybox_init(&skybox, s_reload_scene_dir);
             }
         }
 
@@ -1924,7 +1922,6 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                 idle_next_switch = SDL_GetTicks() +
                     __rand_interval_ms(IDLE_SWITCH_MIN_SEC, IDLE_SWITCH_MAX_SEC);
                 s_last_interact_ticks = SDL_GetTicks();
-                printf("[vrm] settings UI -> animation: %s\n", anim_names[idx]);
             }
         }
 
@@ -1948,9 +1945,6 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                         idle_is_oneshot = __is_oneshot(anim_names[idx]);
                         idle_next_switch = idle_now +
                             __rand_interval_ms(IDLE_SWITCH_MIN_SEC, IDLE_SWITCH_MAX_SEC);
-                        printf("[idle] one-shot done -> %s%s\n",
-                               anim_names[idx],
-                               emo_ctx.speaking ? " (while speaking)" : "");
                     }
                 }
             }
@@ -1990,7 +1984,6 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                             start_ticks     = idle_now;
                             idle_last_pick  = idx;
                             idle_is_oneshot = __is_oneshot(anim_names[idx]);
-                            printf("[idle] rotation -> %s\n", anim_names[idx]);
                         }
                     }
                 }
@@ -2005,7 +1998,6 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                             idle_emotion_revert = idle_now +
                                 (Uint32)(IDLE_EMOTION_HOLD_SEC * 1000);
                         }
-                        printf("[idle] emotion -> %s\n", emotion_name(eid));
                     }
                     idle_next_emotion = idle_now +
                         __rand_interval_ms(IDLE_EMOTION_MIN_SEC, IDLE_EMOTION_MAX_SEC);
@@ -2017,7 +2009,6 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                     if (cur_emo != EMOTION_NEUTRAL) {
                         emotion_set(&emo_ctx, EMOTION_NEUTRAL);
                         cur_emo = EMOTION_NEUTRAL;
-                        printf("[idle] emotion -> Neutral\n");
                     }
                     idle_emotion_revert = 0;
                 }
@@ -2139,51 +2130,6 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
         mat4_multiply(vp, proj_mat, view_mat);
         mat4_multiply(mvp, vp, model_mat);
 
-        float normal_mat[9];
-        mat4_normal_matrix(normal_mat, model_mat);
-
-        float light_dir[3] = { 0.4f, 0.9f, 0.6f };
-        vec3_normalize(light_dir);
-
-        /* ---- shadow map pass ---- */
-        mat4 light_view, light_proj, light_space, light_mvp;
-        {
-            float sh = model.extent * 2.0f;
-            mat4_ortho(light_proj, -sh, sh, -sh, sh,
-                       model.extent * 0.5f, model.extent * 8.0f);
-            float light_eye[3] = {
-                cam_target[0] + light_dir[0] * model.extent * 4.0f,
-                cam_target[1] + light_dir[1] * model.extent * 4.0f,
-                cam_target[2] + light_dir[2] * model.extent * 4.0f
-            };
-            float light_up[3] = { 0.0f, 0.0f, 1.0f };
-            mat4_look_at(light_view, light_eye, cam_target, light_up);
-            mat4_multiply(light_space, light_proj, light_view);
-            mat4_multiply(light_mvp, light_space, model_mat);
-        }
-
-        glBindFramebuffer(GL_FRAMEBUFFER, s_shadow_fbo);
-        glViewport(0, 0, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
-        glClear(GL_DEPTH_BUFFER_BIT);
-        glEnable(GL_DEPTH_TEST);
-        glCullFace(GL_FRONT);
-        glEnable(GL_CULL_FACE);
-
-        glUseProgram(shadow_prog);
-        glUniformMatrix4fv(glGetUniformLocation(shadow_prog, "u_light_mvp"), 1, GL_FALSE, light_mvp);
-        glUniform1i(glGetUniformLocation(shadow_prog, "u_bone_tbo"), 1);
-        if (bone_tbo_tex) {
-            glActiveTexture(GL_TEXTURE1);
-            glBindTexture(GL_TEXTURE_BUFFER, bone_tbo_tex);
-        }
-        for (uint32_t i = 0; i < model.mesh_count; i++) {
-            glUniform1i(glGetUniformLocation(shadow_prog, "u_skinned"), gpu[i].has_bones);
-            glBindVertexArray(gpu[i].vao);
-            glDrawElements(GL_TRIANGLES, (GLsizei)gpu[i].index_count, GL_UNSIGNED_INT, 0);
-        }
-
-        glDisable(GL_CULL_FACE);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, win_w, win_h);
 
         /* ---- draw background ---- */
@@ -2215,47 +2161,11 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
             glDisable(GL_BLEND);
         }
 
-        /* ---- draw ground shadow ---- */
-        {
-            mat4 gm, gmvp;
-            float ground_scale = model.extent * 2.5f;
-            mat4_scale_uniform(gm, ground_scale);
-            gm[13] = model.bbox_min[1] + model.extent * 0.001f;
-            mat4_multiply(gmvp, vp, gm);
-
-            glUseProgram(ground_shadow_prog);
-            glUniformMatrix4fv(glGetUniformLocation(ground_shadow_prog, "u_mvp"), 1, GL_FALSE, gmvp);
-            glUniformMatrix4fv(glGetUniformLocation(ground_shadow_prog, "u_light_vp"), 1, GL_FALSE, light_space);
-            glUniformMatrix4fv(glGetUniformLocation(ground_shadow_prog, "u_ground_mat"), 1, GL_FALSE, gm);
-            glUniform3fv(glGetUniformLocation(ground_shadow_prog, "u_center"), 1, cam_target);
-            glUniform1f(glGetUniformLocation(ground_shadow_prog, "u_radius"), ground_scale * 0.8f);
-            glUniform1i(glGetUniformLocation(ground_shadow_prog, "u_shadow_map"), 2);
-
-            glActiveTexture(GL_TEXTURE2);
-            glBindTexture(GL_TEXTURE_2D, s_shadow_depth_tex);
-
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glDepthMask(GL_FALSE);
-
-            glBindVertexArray(s_ground_vao);
-            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-
-            glDepthMask(GL_TRUE);
-            glDisable(GL_BLEND);
-            glActiveTexture(GL_TEXTURE0);
-        }
-
-        /* ---- draw model ---- */
+        /* ---- draw model (base color + texture only) ---- */
         glUseProgram(model_prog);
         glUniformMatrix4fv(glGetUniformLocation(model_prog, "u_mvp"), 1, GL_FALSE, mvp);
         glUniformMatrix4fv(glGetUniformLocation(model_prog, "u_model"), 1, GL_FALSE, model_mat);
-        glUniformMatrix3fv(glGetUniformLocation(model_prog, "u_normal_mat"), 1, GL_FALSE, normal_mat);
-        glUniform3fv(glGetUniformLocation(model_prog, "u_light_dir"), 1, light_dir);
-        glUniform3f(glGetUniformLocation(model_prog, "u_light_color"), 1.0f, 0.96f, 0.92f);
-        glUniform3fv(glGetUniformLocation(model_prog, "u_view_pos"), 1, eye);
 
-        /* Bind bone TBO to texture unit 1 */
         glUniform1i(glGetUniformLocation(model_prog, "u_texture"), 0);
         glUniform1i(glGetUniformLocation(model_prog, "u_bone_tbo"), 1);
 
@@ -2273,10 +2183,11 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
             glUniform1i(glGetUniformLocation(model_prog, "u_skinned"), gpu[i].has_bones);
 
             glActiveTexture(GL_TEXTURE0);
-            if (gpu[i].has_texture)
+            if (gpu[i].has_texture) {
                 glBindTexture(GL_TEXTURE_2D, gpu[i].tex_id);
-            else
+            } else {
                 glBindTexture(GL_TEXTURE_2D, white_tex);
+            }
 
             glBindVertexArray(gpu[i].vao);
             glDrawElements(GL_TRIANGLES, (GLsizei)gpu[i].index_count, GL_UNSIGNED_INT, 0);
@@ -2317,8 +2228,6 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
     glDeleteProgram(model_prog);
     glDeleteProgram(grid_prog);
     glDeleteProgram(bg_prog);
-    glDeleteProgram(shadow_prog);
-    glDeleteProgram(ground_shadow_prog);
     skybox_destroy(&skybox);
 
     settings_overlay_destroy();
