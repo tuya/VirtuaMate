@@ -32,11 +32,15 @@ typedef struct {
     int               active_anim;
     int               camera_locked;
     int               subtitle_enabled;
+    int               fullscreen;
+    int               spectator;
     overlay_str_cb_t  on_model_change;
     overlay_int_cb_t  on_anim_change;
     overlay_str_cb_t  on_scene_change;
     overlay_int_cb_t  on_camera_lock;
     overlay_int_cb_t  on_subtitle;
+    overlay_int_cb_t  on_fullscreen;
+    overlay_int_cb_t  on_spectator;
     void             *user_data;
 } settings_overlay_cfg_t;
 
@@ -82,6 +86,8 @@ void settings_overlay_toggle(void);
 int  settings_overlay_is_visible(void);
 int  settings_overlay_camera_locked(void);
 int  settings_overlay_subtitle_enabled(void);
+int  settings_overlay_fullscreen(void);
+int  settings_overlay_spectator(void);
 void settings_overlay_set_subtitle(const char *text);
 void settings_overlay_update_anims(char **names, int count, int active);
 
