@@ -335,6 +335,7 @@ static const char *s_model_vs =
     "uniform samplerBuffer u_bone_tbo;\n"
     "\n"
     "out vec2 v_uv;\n"
+    "out vec3 v_normal;\n"
     "\n"
     "mat4 getBoneMatrix(int idx) {\n"
     "    int base = idx * 4;\n"
@@ -363,15 +364,18 @@ static const char *s_model_vs =
     "\n"
     "    gl_Position = u_mvp * pos;\n"
     "    v_uv        = a_uv;\n"
+    "    v_normal    = normalize(mat3(u_model) * norm4.xyz);\n"
     "}\n";
 
 static const char *s_model_fs =
     "#version 140\n"
     "in vec2 v_uv;\n"
+    "in vec3 v_normal;\n"
     "out vec4 frag_color;\n"
-    "uniform vec4  u_base_color;\n"
+    "uniform vec4      u_base_color;\n"
     "uniform sampler2D u_texture;\n"
-    "uniform int   u_has_texture;\n"
+    "uniform int       u_has_texture;\n"
+    "uniform vec3      u_light_dir;\n"
     "void main() {\n"
     "    vec4 base;\n"
     "    if (u_has_texture != 0) {\n"
@@ -380,7 +384,12 @@ static const char *s_model_fs =
     "        base = u_base_color;\n"
     "    }\n"
     "    if (base.a < 0.1) discard;\n"
-    "    frag_color = base;\n"
+    "\n"
+    "    vec3 n = normalize(v_normal);\n"
+    "    float NdotL = dot(n, u_light_dir);\n"
+    "    float lit = smoothstep(-0.02, 0.05, NdotL - 0.1);\n"
+    "    vec3 shadow = base.rgb * vec3(0.62, 0.58, 0.72);\n"
+    "    frag_color = vec4(mix(shadow, base.rgb, lit), base.a);\n"
     "}\n";
 
 /* ---- grid shader ---- */
@@ -1094,6 +1103,42 @@ static void __on_subtitle_toggle(int enabled, void *user_data)
 }
 
 /**
+ * @brief LVGL settings callback: fullscreen toggled.
+ * @param[in] enabled   1 = fullscreen, 0 = windowed
+ * @param[in] user_data Pointer to SDL_Window
+ * @return none
+ */
+static void __on_fullscreen_toggle(int enabled, void *user_data)
+{
+    SDL_Window *win = (SDL_Window *)user_data;
+    if (!win) {
+        return;
+    }
+    SDL_SetWindowFullscreen(win,
+        enabled ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+}
+
+static float s_spec_yaw      = 0.0f;
+static float s_spec_pitch    = 0.15f;
+static float s_spec_dist     = 3.0f;
+static float s_spec_target[3] = {0};
+static int   s_spec_inited   = 0;
+
+/**
+ * @brief Settings callback: spectator mode toggled.
+ * @param[in] enabled   1 = spectator on, 0 = off
+ * @param[in] user_data unused
+ * @return none
+ */
+static void __on_spectator_toggle(int enabled, void *user_data)
+{
+    (void)user_data;
+    if (enabled) {
+        s_spec_inited = 0;
+    }
+}
+
+/**
  * @brief Extract the directory portion of a file path.
  * @param[out] out      Output buffer
  * @param[in]  out_size Buffer size
@@ -1282,6 +1327,9 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
     GLuint model_prog = __link_program(s_model_vs, s_model_fs);
     GLuint grid_prog  = __link_program(s_grid_vs, s_grid_fs);
     GLuint bg_prog    = __link_program(s_bg_vs, s_bg_fs);
+    GLuint shadow_prog = __link_program(s_shadow_vs, s_shadow_fs);
+    GLuint ground_shadow_prog = __link_program(s_ground_shadow_vs,
+                                               s_ground_shadow_fs);
 
     /* ---- upload meshes ---- */
     gpu_mesh_t *gpu = (gpu_mesh_t *)calloc(model.mesh_count, sizeof(gpu_mesh_t));
@@ -1292,7 +1340,8 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
 
     __create_grid();
     __create_bg_quad();
-    /* Outline and shadow effects are disabled. */
+    __create_shadow_fbo();
+    __create_ground_quad();
 
     /* ---- Skybox (cubemap) ---- */
     skybox_t skybox;
@@ -1433,6 +1482,9 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
         }
 #endif
 
+        int init_fullscreen = (SDL_GetWindowFlags(window) &
+                               SDL_WINDOW_FULLSCREEN_DESKTOP) ? 1 : 0;
+
         settings_overlay_cfg_t sui_cfg = {
             .model_dir        = model_dir,
             .current_model    = model_basename,
@@ -1443,12 +1495,15 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
             .active_anim      = 0,
             .camera_locked    = 0,
             .subtitle_enabled = 1,
+            .fullscreen       = init_fullscreen,
             .on_model_change  = __on_model_change,
             .on_anim_change   = __on_anim_change,
             .on_scene_change  = __on_scene_change,
             .on_camera_lock   = __on_camera_lock,
             .on_subtitle      = __on_subtitle_toggle,
-            .user_data        = NULL,
+            .on_fullscreen    = __on_fullscreen_toggle,
+            .on_spectator     = __on_spectator_toggle,
+            .user_data        = window,
         };
 
         settings_overlay_init(&sui_cfg);
@@ -1491,6 +1546,7 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                 continue;
             }
             int cam_locked = settings_overlay_camera_locked();
+            int spectator  = settings_overlay_spectator();
 
             switch (ev.type) {
             case SDL_QUIT:
@@ -1505,21 +1561,54 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                 }
                 break;
             case SDL_MOUSEBUTTONDOWN:
-                if (ev.button.button == SDL_BUTTON_LEFT && !cam_locked) {
+                if (ev.button.button == SDL_BUTTON_LEFT ||
+                    ev.button.button == SDL_BUTTON_RIGHT ||
+                    ev.button.button == SDL_BUTTON_MIDDLE) {
                     dragging = true;
                     last_mx = ev.button.x; last_my = ev.button.y;
                 }
                 break;
             case SDL_MOUSEBUTTONUP:
-                if (ev.button.button == SDL_BUTTON_LEFT) dragging = false;
+                if (ev.button.button == SDL_BUTTON_LEFT ||
+                    ev.button.button == SDL_BUTTON_RIGHT ||
+                    ev.button.button == SDL_BUTTON_MIDDLE) {
+                    dragging = false;
+                }
                 break;
             case SDL_MOUSEMOTION:
-                if (dragging && !cam_locked) {
-                    model_y_rot += (ev.motion.x - last_mx) * 0.005f;
+                if (dragging) {
+                    int dx = ev.motion.x - last_mx;
+                    int dy = ev.motion.y - last_my;
+                    if (spectator) {
+                        Uint32 btns = SDL_GetMouseState(NULL, NULL);
+                        int rmb = btns & SDL_BUTTON(SDL_BUTTON_RIGHT);
+                        int mmb = btns & SDL_BUTTON(SDL_BUTTON_MIDDLE);
+                        if (rmb || mmb) {
+                            float pan_scale = s_spec_dist * 0.002f;
+                            float rx = cosf(s_spec_yaw);
+                            float rz = -sinf(s_spec_yaw);
+                            s_spec_target[0] -= rx * (float)dx * pan_scale;
+                            s_spec_target[2] -= rz * (float)dx * pan_scale;
+                            s_spec_target[1] += (float)dy * pan_scale;
+                        } else {
+                            s_spec_yaw   += (float)dx * 0.005f;
+                            s_spec_pitch -= (float)dy * 0.005f;
+                            if (s_spec_pitch >  1.55f) s_spec_pitch =  1.55f;
+                            if (s_spec_pitch < -1.55f) s_spec_pitch = -1.55f;
+                        }
+                    } else if (!cam_locked) {
+                        model_y_rot += dx * 0.005f;
+                    }
                     last_mx = ev.motion.x; last_my = ev.motion.y;
                 }
                 break;
             case SDL_MOUSEWHEEL:
+                if (spectator) {
+                    float zoom = (ev.wheel.y > 0) ? 0.85f : 1.18f;
+                    s_spec_dist *= zoom;
+                    if (s_spec_dist < 0.1f) s_spec_dist = 0.1f;
+                    if (s_spec_dist > 200.0f) s_spec_dist = 200.0f;
+                }
                 break;
             case SDL_KEYDOWN:
                 if (ev.key.keysym.sym == SDLK_ESCAPE) running = false;
@@ -2114,21 +2203,86 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
         cam_target[1] = model_mat[1] * model.center[0] + model_mat[5] * model.center[1] + model_mat[9]  * model.center[2];
         cam_target[2] = model_mat[2] * model.center[0] + model_mat[6] * model.center[1] + model_mat[10] * model.center[2];
 
-        /* ---- camera (fixed position, orbits around rotated center) ---- */
-        float eye[3] = {
-            cam_target[0] + cam_dist * cosf(cam_pitch) * sinf(cam_yaw),
-            cam_target[1] + cam_dist * sinf(cam_pitch),
-            cam_target[2] + cam_dist * cosf(cam_pitch) * cosf(cam_yaw)
-        };
+        /* ---- camera ---- */
+        float eye[3];
+        float cam_look_target[3];
         float up[3] = { 0.0f, 1.0f, 0.0f };
 
-        mat4_look_at(view_mat, eye, cam_target, up);
+        int spectator_on = settings_overlay_spectator();
+        if (spectator_on) {
+            if (!s_spec_inited) {
+                s_spec_yaw   = cam_yaw;
+                s_spec_pitch = cam_pitch;
+                s_spec_dist  = cam_dist;
+                s_spec_target[0] = cam_target[0];
+                s_spec_target[1] = cam_target[1];
+                s_spec_target[2] = cam_target[2];
+                s_spec_inited = 1;
+            }
+
+            eye[0] = s_spec_target[0] + s_spec_dist * cosf(s_spec_pitch) * sinf(s_spec_yaw);
+            eye[1] = s_spec_target[1] + s_spec_dist * sinf(s_spec_pitch);
+            eye[2] = s_spec_target[2] + s_spec_dist * cosf(s_spec_pitch) * cosf(s_spec_yaw);
+            cam_look_target[0] = s_spec_target[0];
+            cam_look_target[1] = s_spec_target[1];
+            cam_look_target[2] = s_spec_target[2];
+        } else {
+            eye[0] = cam_target[0] + cam_dist * cosf(cam_pitch) * sinf(cam_yaw);
+            eye[1] = cam_target[1] + cam_dist * sinf(cam_pitch);
+            eye[2] = cam_target[2] + cam_dist * cosf(cam_pitch) * cosf(cam_yaw);
+            cam_look_target[0] = cam_target[0];
+            cam_look_target[1] = cam_target[1];
+            cam_look_target[2] = cam_target[2];
+        }
+
+        mat4_look_at(view_mat, eye, cam_look_target, up);
         mat4_perspective(proj_mat, 45.0f * (float)M_PI / 180.0f,
                          (float)win_w / (float)(win_h > 0 ? win_h : 1),
                          0.01f, 1000.0f);
 
         mat4_multiply(vp, proj_mat, view_mat);
         mat4_multiply(mvp, vp, model_mat);
+
+        /* ---- Light matrix for shadow mapping ---- */
+        mat4 light_vp, light_mvp;
+        {
+            float le = model.extent * 1.5f;
+            if (le < 1.0f) le = 1.0f;
+            vec3 l_eye = {
+                cam_target[0],
+                cam_target[1] + le * 2.0f,
+                cam_target[2] + le * 2.5f
+            };
+            vec3 l_at = { cam_target[0], model.bbox_min[1], cam_target[2] };
+            vec3 l_up = { 0.0f, 0.0f, -1.0f };
+            mat4 lv, lp;
+            mat4_look_at(lv, l_eye, l_at, l_up);
+            mat4_ortho(lp, -le, le, -le, le, 0.01f, le * 6.0f);
+            mat4_multiply(light_vp, lp, lv);
+            mat4_multiply(light_mvp, light_vp, model_mat);
+        }
+
+        /* ---- Shadow depth pass ---- */
+        glBindFramebuffer(GL_FRAMEBUFFER, s_shadow_fbo);
+        glViewport(0, 0, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_DEPTH_TEST);
+        glUseProgram(shadow_prog);
+        glUniformMatrix4fv(glGetUniformLocation(shadow_prog, "u_light_mvp"),
+                           1, GL_FALSE, light_mvp);
+        glUniform1i(glGetUniformLocation(shadow_prog, "u_bone_tbo"), 1);
+        if (bone_tbo_tex) {
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_BUFFER, bone_tbo_tex);
+        }
+        for (uint32_t i = 0; i < model.mesh_count; i++) {
+            glUniform1i(glGetUniformLocation(shadow_prog, "u_skinned"),
+                        gpu[i].has_bones);
+            glBindVertexArray(gpu[i].vao);
+            glDrawElements(GL_TRIANGLES, (GLsizei)gpu[i].index_count,
+                           GL_UNSIGNED_INT, 0);
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
         glViewport(0, 0, win_w, win_h);
 
@@ -2161,10 +2315,16 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
             glDisable(GL_BLEND);
         }
 
-        /* ---- draw model (base color + texture only) ---- */
+        /* ---- draw model (toon cel shading) ---- */
         glUseProgram(model_prog);
         glUniformMatrix4fv(glGetUniformLocation(model_prog, "u_mvp"), 1, GL_FALSE, mvp);
         glUniformMatrix4fv(glGetUniformLocation(model_prog, "u_model"), 1, GL_FALSE, model_mat);
+        {
+            float ld[3] = { 0.0f, 0.15f, 1.0f };
+            float len = sqrtf(ld[0]*ld[0] + ld[1]*ld[1] + ld[2]*ld[2]);
+            ld[0] /= len; ld[1] /= len; ld[2] /= len;
+            glUniform3fv(glGetUniformLocation(model_prog, "u_light_dir"), 1, ld);
+        }
 
         glUniform1i(glGetUniformLocation(model_prog, "u_texture"), 0);
         glUniform1i(glGetUniformLocation(model_prog, "u_bone_tbo"), 1);
@@ -2192,6 +2352,50 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
             glBindVertexArray(gpu[i].vao);
             glDrawElements(GL_TRIANGLES, (GLsizei)gpu[i].index_count, GL_UNSIGNED_INT, 0);
         }
+        glDisable(GL_BLEND);
+
+        /* ---- Ground shadow ---- */
+        glUseProgram(ground_shadow_prog);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+        {
+            float gs = model.extent * 3.0f;
+            mat4 ground_mat;
+            mat4_identity(ground_mat);
+            ground_mat[0]  = gs;
+            ground_mat[10] = gs;
+            ground_mat[13] = model.bbox_min[1];
+
+            mat4 gmvp;
+            mat4_multiply(gmvp, vp, ground_mat);
+
+            glUniformMatrix4fv(
+                glGetUniformLocation(ground_shadow_prog, "u_mvp"),
+                1, GL_FALSE, gmvp);
+            glUniformMatrix4fv(
+                glGetUniformLocation(ground_shadow_prog, "u_light_vp"),
+                1, GL_FALSE, light_vp);
+            glUniformMatrix4fv(
+                glGetUniformLocation(ground_shadow_prog, "u_ground_mat"),
+                1, GL_FALSE, ground_mat);
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, s_shadow_depth_tex);
+            glUniform1i(
+                glGetUniformLocation(ground_shadow_prog, "u_shadow_map"), 0);
+
+            vec3 sc = { cam_target[0], 0.0f, cam_target[2] };
+            glUniform3fv(
+                glGetUniformLocation(ground_shadow_prog, "u_center"), 1, sc);
+            glUniform1f(
+                glGetUniformLocation(ground_shadow_prog, "u_radius"),
+                gs * 0.8f);
+
+            glBindVertexArray(s_ground_vao);
+            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        }
+        glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
 
         /* ---- Settings overlay + subtitle (2D on top of 3D) ---- */
@@ -2228,6 +2432,8 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
     glDeleteProgram(model_prog);
     glDeleteProgram(grid_prog);
     glDeleteProgram(bg_prog);
+    glDeleteProgram(shadow_prog);
+    glDeleteProgram(ground_shadow_prog);
     skybox_destroy(&skybox);
 
     settings_overlay_destroy();

@@ -245,6 +245,8 @@ static int        s_anim_sel      = -1;
 static int        s_visible        = 0;
 static int        s_cam_locked     = 0;
 static int        s_sub_enabled    = 0;
+static int        s_fullscreen     = 0;
+static int        s_spectator      = 0;
 static float      s_scroll         = 0.0f;
 static char       s_subtitle[OVL_SUBTITLE_MAX];
 
@@ -253,6 +255,8 @@ static overlay_int_cb_t s_cb_anim  = NULL;
 static overlay_str_cb_t s_cb_scene = NULL;
 static overlay_int_cb_t s_cb_cam   = NULL;
 static overlay_int_cb_t s_cb_sub   = NULL;
+static overlay_int_cb_t s_cb_fs    = NULL;
+static overlay_int_cb_t s_cb_spec  = NULL;
 static void            *s_cb_ud    = NULL;
 
 static GLuint     s_sub_tex         = 0;
@@ -986,7 +990,7 @@ static float __content_height(void)
     h += OVL_SECTION_H + (s_model_count > 0 ? s_model_count : 1) * OVL_ITEM_H + OVL_SEP_H;
     h += OVL_SECTION_H + (s_anim_count > 0 ? s_anim_count : 1) * OVL_ITEM_H + OVL_SEP_H;
     h += OVL_SECTION_H + (1 + (s_scene_count > 0 ? s_scene_count : 0)) * OVL_ITEM_H + OVL_SEP_H;
-    h += OVL_ITEM_H * 2 + OVL_SEP_H;
+    h += OVL_ITEM_H * 4 + OVL_SEP_H;
     h += OVL_ITEM_H + OVL_PAD;
     return h;
 }
@@ -1159,6 +1163,34 @@ static void __walk_panel(int pass, int win_w, int win_h)
         else               { cr = 0.50f; cg = 0.50f; cb = 0.55f; }
         __push_text(OVL_PAD, y + 5,
                     s_sub_enabled ? "[#] Subtitle" : "[ ] Subtitle",
+                    mc, cr, cg, cb, 1.0f);
+    }
+    y += OVL_ITEM_H;
+
+    if (pass == 0 && s_fullscreen) {
+        __push_rect(OVL_PAD, y + 1, pw - OVL_PAD * 2, OVL_ITEM_H - 2,
+                    0.12f, 0.28f, 0.22f, 0.60f);
+    }
+    if (pass == 1) {
+        float cr, cg, cb;
+        if (s_fullscreen) { cr = 0.30f; cg = 0.85f; cb = 0.65f; }
+        else              { cr = 0.50f; cg = 0.50f; cb = 0.55f; }
+        __push_text(OVL_PAD, y + 5,
+                    s_fullscreen ? "[#] Fullscreen" : "[ ] Fullscreen",
+                    mc, cr, cg, cb, 1.0f);
+    }
+    y += OVL_ITEM_H;
+
+    if (pass == 0 && s_spectator) {
+        __push_rect(OVL_PAD, y + 1, pw - OVL_PAD * 2, OVL_ITEM_H - 2,
+                    0.12f, 0.28f, 0.22f, 0.60f);
+    }
+    if (pass == 1) {
+        float cr, cg, cb;
+        if (s_spectator) { cr = 0.30f; cg = 0.85f; cb = 0.65f; }
+        else             { cr = 0.50f; cg = 0.50f; cb = 0.55f; }
+        __push_text(OVL_PAD, y + 5,
+                    s_spectator ? "[#] Spectator" : "[ ] Spectator",
                     mc, cr, cg, cb, 1.0f);
     }
     y += OVL_ITEM_H;
@@ -1380,10 +1412,24 @@ static int __hit_panel_item(int mx, int my, int win_h,
         return 1;
     }
     y += OVL_ITEM_H;
+
+    /* Fullscreen toggle */
+    *section = 5;
+    if (my >= y && my < y + OVL_ITEM_H) {
+        return 1;
+    }
+    y += OVL_ITEM_H;
+
+    /* Spectator toggle */
+    *section = 6;
+    if (my >= y && my < y + OVL_ITEM_H) {
+        return 1;
+    }
+    y += OVL_ITEM_H;
     y += OVL_SEP_H;
 
     /* Close button */
-    *section = 5;
+    *section = 7;
     if (my >= y && my < y + OVL_ITEM_H) {
         return 1;
     }
@@ -1417,6 +1463,8 @@ int settings_overlay_init(const settings_overlay_cfg_t *cfg)
     s_anim_sel   = cfg->active_anim;
     s_cam_locked   = cfg->camera_locked;
     s_sub_enabled  = cfg->subtitle_enabled;
+    s_fullscreen   = cfg->fullscreen;
+    s_spectator    = cfg->spectator;
     s_subtitle[0]  = '\0';
     __subtitle_texture_reset();
     s_scroll       = 0.0f;
@@ -1427,6 +1475,8 @@ int settings_overlay_init(const settings_overlay_cfg_t *cfg)
     s_cb_scene = cfg->on_scene_change;
     s_cb_cam   = cfg->on_camera_lock;
     s_cb_sub   = cfg->on_subtitle;
+    s_cb_fs    = cfg->on_fullscreen;
+    s_cb_spec  = cfg->on_spectator;
     s_cb_ud    = cfg->user_data;
 
     __scan_dir(s_models, &s_model_count, OVL_MAX_FILES,
@@ -1537,6 +1587,18 @@ int settings_overlay_handle_event(const SDL_Event *ev, int win_w, int win_h)
                 }
                 break;
             case 5:
+                s_fullscreen = !s_fullscreen;
+                if (s_cb_fs) {
+                    s_cb_fs(s_fullscreen, s_cb_ud);
+                }
+                break;
+            case 6:
+                s_spectator = !s_spectator;
+                if (s_cb_spec) {
+                    s_cb_spec(s_spectator, s_cb_ud);
+                }
+                break;
+            case 7:
                 s_visible = 0;
                 break;
             }
@@ -1664,6 +1726,16 @@ int settings_overlay_camera_locked(void)
 int settings_overlay_subtitle_enabled(void)
 {
     return s_sub_enabled;
+}
+
+int settings_overlay_fullscreen(void)
+{
+    return s_fullscreen;
+}
+
+int settings_overlay_spectator(void)
+{
+    return s_spectator;
 }
 
 void settings_overlay_set_subtitle(const char *text)
