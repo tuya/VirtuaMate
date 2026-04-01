@@ -215,12 +215,9 @@ static OPERATE_RET __ai_mcp_init(void *data)
 {
     OPERATE_RET rt = OPRT_OK;
 
-    // FIXME: Set actual MCP server name and mcp version
     TUYA_CALL_ERR_RETURN(ai_mcp_server_init("Tuya MCP Server", "1.0"));
 
     TUYA_CALL_ERR_RETURN(__ai_mcp_tools_register());
-
-    PR_DEBUG("MCP Server initialized successfully");
 
     return rt;
 }

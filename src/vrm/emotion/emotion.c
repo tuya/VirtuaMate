@@ -522,8 +522,6 @@ void emotion_set_ex(emotion_ctx_t *ctx, emotion_id_t id, float speed)
     ctx->transition_speed = (speed > 0.0f) ? speed
                                             : s_presets[id].transition_speed;
 
-    printf("[emotion] -> %s (speed=%.1f)\n",
-           s_presets[id].display_name, ctx->transition_speed);
 }
 
 void emotion_update(emotion_ctx_t *ctx, float dt)
@@ -707,16 +705,12 @@ void emotion_set_speaking(emotion_ctx_t *ctx, int speaking)
         if (ctx->lip_sync)
             lip_sync_reset(ctx->lip_sync);
     }
-    printf("[emotion] speaking: %s (%s)\n",
-           speaking ? "ON" : "OFF",
-           ctx->lip_sync ? "audio-driven" : "procedural");
 }
 
 void emotion_set_lip_sync(emotion_ctx_t *ctx, lip_sync_ctx_t *ls)
 {
     if (!ctx) return;
     ctx->lip_sync = ls;
-    printf("[emotion] lip_sync: %s\n", ls ? "audio-driven" : "procedural fallback");
 }
 
 /**
