@@ -1,0 +1,30 @@
+# /etc/systemd/system/virtuamate.service
+# Systemd unit for VirtuaMate auto-start on Raspberry Pi
+#
+# Install:
+#   sudo cp scripts/virtuamate.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable virtuamate
+#   sudo systemctl start  virtuamate
+#
+# Logs:
+#   journalctl -u virtuamate -f
+#   tail -f ~/kolp/VirtuaMate/virtuamate.log
+
+[Unit]
+Description=VirtuaMate 3D AI Companion
+After=network-online.target graphical.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xwx
+Environment=DISPLAY=:0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+WorkingDirectory=/home/xwx/kolp/VirtuaMate
+ExecStart=/home/xwx/kolp/VirtuaMate/scripts/start.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target
