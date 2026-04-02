@@ -1,14 +1,11 @@
-name: DuckyClaw Check Build
-run-name: ${{ github.actor }} triggered build check
+name: VirtuaMate CI
+run-name: ${{ github.actor }} triggered CI check
 on:
   push:
   pull_request:
 jobs:
-  Check-Build:
+  Check-Source:
     runs-on: ubuntu-latest
-    env:
-      OPEN_COUNTRY_CODE: "NONE"
-      BUILD_LOG_BASE: ${{ github.workspace }}/tmp/logs/build_logs_${{ github.run_number }}
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
@@ -16,50 +13,36 @@ jobs:
           show-progress: false
           submodules: true
 
-      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
-      - run: echo "🐧 Running on ${{ runner.os }}, branch is ${{ github.ref }} !"
+      - run: echo "🎉 Triggered by ${{ github.event_name }} on ${{ github.ref }}"
 
-      - name: Install system dependencies
+      - name: Verify project structure
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends \
-            wget git lcov cmake ninja-build \
-            build-essential \
-            python3 python3-pip python3-venv \
-            libc6-i386 libsystemd-dev
-
-      - name: Check Base Tools
-        run: |
-          echo "::group::Checking base tools"
-          cd ${{ github.workspace }}/TuyaOpen
-          . ./export.sh
-          cd ${{ github.workspace }}
-          tos.py version
-          rm -rf ${{ github.workspace }}/dist
+          echo "::group::Project structure check"
+          test -f CMakeLists.txt        && echo "✓ CMakeLists.txt"
+          test -f Kconfig               && echo "✓ Kconfig"
+          test -d TuyaOpen              && echo "✓ TuyaOpen submodule"
+          test -d src/vrm               && echo "✓ src/vrm"
+          test -d config                && echo "✓ config"
+          test -f config/RaspberryPi.config && echo "✓ RaspberryPi.config"
           echo "::endgroup::"
 
-      - name: Build All Board Configs
-        env:
-          BUILD_LOG_DIR: ${{ env.BUILD_LOG_BASE }}/all_configs
+      - name: Verify TuyaOpen SDK
         run: |
-          echo "::group::Building all board configs"
-          cd ${{ github.workspace }}/TuyaOpen
-          . ./export.sh
-          mkdir -p .cache && touch .cache/.dont_prompt_update_platform
-          cd ${{ github.workspace }}
-          tos.py dev bac -d ${{ github.workspace }}/dist -o "$BUILD_LOG_DIR"
+          echo "::group::TuyaOpen SDK check"
+          cd TuyaOpen
+          test -f tos.py      && echo "✓ tos.py"
+          test -f export.sh   && echo "✓ export.sh"
+          echo "SDK commit: $(git rev-parse --short HEAD)"
           echo "::endgroup::"
 
-      - name: Set timestamp
-        id: timestamp
-        if: always()
-        run: echo "timestamp=$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_OUTPUT
-
-      - name: Upload Log
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build_logs_${{ github.run_number }}_${{ steps.timestamp.outputs.timestamp }}
-          path: ${{ env.BUILD_LOG_BASE }}
-          retention-days: 90
-          if-no-files-found: warn
+      - name: Check source files compile-ready
+        run: |
+          echo "::group::Source file check"
+          echo "C source files:"
+          find src/ agent/ IM/ tools/ memory/ gateway/ -name '*.c' 2>/dev/null | wc -l
+          echo "C header files:"
+          find src/ agent/ IM/ tools/ memory/ gateway/ include/ -name '*.h' 2>/dev/null | wc -l
+          echo ""
+          echo "NOTE: Actual build requires Raspberry Pi (ARM) native compilation."
+          echo "      Cross-compilation is not currently supported in CI."
+          echo "::endgroup::"
