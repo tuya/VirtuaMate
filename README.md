@@ -245,4 +245,4 @@ VirtuaMate 是一个开放的项目，欢迎任何人参与。
 
 ## 📜 License
 
-本项目基于 [MIT License](LICENSE) 开源。
+本项目基于 [Apache-2.0 license](LICENSE) 开源。
