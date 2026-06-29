@@ -274,8 +274,8 @@ void __on_anim_change(int index, void *user_data)
 }
 
 /**
- * @brief LVGL settings callback: user selected a new scene.
- * @param[in] dir       Scene directory path ("" for no skybox)
+ * @brief Settings callback: user selected a scene sub-folder or empty scene.
+ * @param[in] dir       Scene sub-directory path ("" for no scene)
  * @param[in] user_data Unused
  * @return none
  */

@@ -97,8 +97,8 @@ void vrm_viewer_set_subtitle(const char *text);
 void vrm_viewer_reload_model(const char *model_path);
 
 /**
- * @brief Request a scene (skybox) reload.
- * @param[in] scene_dir  Path to the new scene directory ("" = no skybox).
+ * @brief Request a scene background reload.
+ * @param[in] scene_dir  Path to the new scene directory ("" = gradient background).
  * @return none
  */
 void vrm_viewer_reload_scene(const char *scene_dir);

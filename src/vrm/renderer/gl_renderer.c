@@ -13,6 +13,7 @@
 #include "vrm_spring_bone.h"
 #include "vrm_lip_sync.h"
 #include "vrm_skybox.h"
+#include "vrm_bg2d.h"
 #include "vrm_overlay.h"
 #include "mtoon_shaders.h"
 #include "mtoon_outline.h"
@@ -31,6 +32,34 @@
 
 #include "tuya_kconfig.h"
 #include "svc_ai_player.h"
+
+/**
+ * @brief Load cubemap skybox or 2D background when user selects a scene folder
+ * @param[out] skybox  Skybox context
+ * @param[out] bg2d    2D background context
+ * @param[in]  dir     Scene sub-directory path ("" = empty scene / gradient)
+ * @return none
+ */
+static void __load_scene_background(skybox_t *skybox, bg2d_t *bg2d, const char *dir)
+{
+    skybox_destroy(skybox);
+    bg2d_destroy(bg2d);
+    memset(skybox, 0, sizeof(*skybox));
+    memset(bg2d, 0, sizeof(*bg2d));
+
+    if (!dir || dir[0] == '\0') {
+        return;
+    }
+
+    printf("[vrm_viewer] loading scene from: %s\n", dir);
+    if (skybox_init(skybox, dir) == 0) {
+        return;
+    }
+    if (bg2d_init(bg2d, dir) == 0) {
+        return;
+    }
+    printf("[vrm_viewer] scene not available — using gradient background\n");
+}
 
 int vrm_viewer_run(const char *model_path, const char *vrma_dir)
 {
@@ -211,17 +240,11 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
     __create_shadow_fbo();
     __create_ground_quad();
 
-    /* ---- Skybox (cubemap) ---- */
+    /* ---- Scene background (empty by default; user picks in settings) ---- */
     skybox_t skybox;
+    bg2d_t bg2d;
     memset(&skybox, 0, sizeof(skybox));
-#ifdef VRM_SCENE_DIR
-    if (VRM_SCENE_DIR[0] != '\0') {
-        printf("[vrm_viewer] loading skybox from: %s\n", VRM_SCENE_DIR);
-        if (skybox_init(&skybox, VRM_SCENE_DIR) != 0) {
-            printf("[vrm_viewer] skybox not available — using gradient background\n");
-        }
-    }
-#endif
+    memset(&bg2d, 0, sizeof(bg2d));
 
     /* ---- Bone matrix TBO ---- */
     GLuint bone_tbo_tex = 0, bone_tbo_buf = 0;
@@ -325,28 +348,14 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
         char model_dir[RELOAD_PATH_MAX];
         char model_basename[256];
         char scene_parent[RELOAD_PATH_MAX];
-        char scene_basename[256];
 
         __path_dirname(model_dir, sizeof(model_dir), model_path);
         __path_basename(model_basename, sizeof(model_basename), model_path);
 
         scene_parent[0] = '\0';
-        scene_basename[0] = '\0';
 #ifdef VRM_SCENE_PARENT_DIR
         if (VRM_SCENE_PARENT_DIR[0] != '\0') {
             snprintf(scene_parent, sizeof(scene_parent), "%s", VRM_SCENE_PARENT_DIR);
-        } else
-#endif
-        {
-#ifdef VRM_SCENE_DIR
-            if (VRM_SCENE_DIR[0] != '\0') {
-                __path_dirname(scene_parent, sizeof(scene_parent), VRM_SCENE_DIR);
-            }
-#endif
-        }
-#ifdef VRM_SCENE_DIR
-        if (VRM_SCENE_DIR[0] != '\0') {
-            __path_basename(scene_basename, sizeof(scene_basename), VRM_SCENE_DIR);
         }
 #endif
 
@@ -357,7 +366,7 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
             .model_dir        = model_dir,
             .current_model    = model_basename,
             .scene_parent_dir = scene_parent,
-            .current_scene    = scene_basename,
+            .current_scene    = "",
             .anim_names       = anim_names,
             .anim_count       = anim_name_count,
             .active_anim      = 0,
@@ -858,11 +867,7 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
         /* ---- handle scene reload ---- */
         if (s_reload_scene_pending) {
             s_reload_scene_pending = 0;
-            skybox_destroy(&skybox);
-            memset(&skybox, 0, sizeof(skybox));
-            if (s_reload_scene_dir[0] != '\0') {
-                skybox_init(&skybox, s_reload_scene_dir);
-            }
+            __load_scene_background(&skybox, &bg2d, s_reload_scene_dir);
         }
 
         /* ---- sync animation selection from LVGL settings ---- */
@@ -1158,6 +1163,8 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         if (skybox.loaded) {
             skybox_draw(&skybox, view_mat, proj_mat);
+        } else if (bg2d.loaded) {
+            bg2d_draw(&bg2d, win_w, win_h);
         } else {
             glDisable(GL_DEPTH_TEST);
             glUseProgram(bg_prog);
@@ -1166,8 +1173,8 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
             glEnable(GL_DEPTH_TEST);
         }
 
-        /* ---- draw grid only when no skybox is active ---- */
-        if (!skybox.loaded) {
+        /* ---- draw grid only when no scene background is active ---- */
+        if (!skybox.loaded && !bg2d.loaded) {
             glUseProgram(grid_prog);
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -1279,6 +1286,7 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
     glDeleteProgram(shadow_prog);
     glDeleteProgram(ground_shadow_prog);
     skybox_destroy(&skybox);
+    bg2d_destroy(&bg2d);
 
     vrm_overlay_destroy();
 
