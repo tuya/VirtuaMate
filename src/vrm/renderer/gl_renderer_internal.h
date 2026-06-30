@@ -150,6 +150,8 @@ extern volatile int s_reload_scene_pending;
 
 extern volatile Uint32 s_speaking_stop_ticks;
 extern volatile int    s_speaking_stop_pending;
+extern volatile int    s_speaking_active;
+extern volatile int    s_subtitle_clear_pending;
 
 extern const idle_anim_entry_t s_idle_pool[];
 extern const char             *s_oneshot_anims[];

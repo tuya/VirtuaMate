@@ -500,10 +500,13 @@ void emotion_init(emotion_ctx_t *ctx, vrm_model_t *model)
     ctx->lip_expr_oh = vrm_find_expression(model, "oh");
     if (ctx->lip_expr_oh < 0) ctx->lip_expr_oh = vrm_find_expression(model, "O");
     if (ctx->lip_expr_oh < 0) ctx->lip_expr_oh = vrm_find_expression(model, "o");
+    /* jawOpen — ARKit / blend-shape jaw for visible mouth opening */
+    ctx->lip_expr_jaw = vrm_find_expression(model, "jawOpen");
+    if (ctx->lip_expr_jaw < 0) ctx->lip_expr_jaw = vrm_find_expression(model, "JawOpen");
 
-    printf("[emotion]   lip-sync: aa=%d ih=%d ou=%d ee=%d oh=%d\n",
+    printf("[emotion]   lip-sync: aa=%d ih=%d ou=%d ee=%d oh=%d jaw=%d\n",
            ctx->lip_expr_aa, ctx->lip_expr_ih, ctx->lip_expr_ou,
-           ctx->lip_expr_ee, ctx->lip_expr_oh);
+           ctx->lip_expr_ee, ctx->lip_expr_oh, ctx->lip_expr_jaw);
 }
 
 void emotion_set(emotion_ctx_t *ctx, emotion_id_t id)
@@ -647,18 +650,19 @@ void emotion_update(emotion_ctx_t *ctx, float dt)
     /* ---- 4. Speaking overlay — audio-driven or procedural fallback ---- */
     if (ctx->speaking) {
         float w_aa = 0.0f, w_ih = 0.0f, w_ou = 0.0f, w_ee = 0.0f, w_oh = 0.0f;
+        float jaw_w = 0.0f;
 
         if (ctx->lip_sync) {
-            /* --- Audio-driven path: read weights from PCM energy analysis --- */
             lip_sync_get_weights(ctx->lip_sync,
                                  &w_aa, &w_ih, &w_ou, &w_ee, &w_oh);
+            jaw_w = lip_sync_get_jaw_weight(ctx->lip_sync);
         } else {
-            /* --- Procedural fallback: cycle A→I→U→E→O (no audio context) --- */
+            /* Procedural fallback only when no PCM lip-sync context (e.g. debug). */
             ctx->speak_timer += dt;
 
-            const float vowel_dur = 0.12f;
+            const float vowel_dur = 0.14f;
             const float cycle_dur = vowel_dur * 5.0f;
-            const float pause_dur = 0.15f;
+            const float pause_dur = 0.18f;
             const float total_dur = cycle_dur + pause_dur;
             float phase = fmodf(ctx->speak_timer, total_dur);
 
@@ -667,25 +671,50 @@ void emotion_update(emotion_ctx_t *ctx, float dt)
                 float slot_f = phase / vowel_dur;
                 int   slot   = (int)slot_f;
                 float frac   = slot_f - (float)slot;
-                if (slot > 4) slot = 4;
-                w[slot] = sinf(3.14159265f * frac);
+                if (slot > 4) {
+                    slot = 4;
+                }
+                w[slot] = 0.45f * sinf(3.14159265f * frac);
                 if (frac > 0.5f && slot < 4) {
                     float rise = (frac - 0.5f) * 2.0f;
-                    w[slot + 1] = sinf(3.14159265f * 0.5f * rise);
+                    w[slot + 1] = 0.45f * sinf(3.14159265f * 0.5f * rise);
                 }
             }
             w_aa = w[0]; w_ih = w[1]; w_ou = w[2]; w_ee = w[4]; w_oh = w[3];
+            jaw_w = w_aa;
+            if (w_ih > jaw_w) jaw_w = w_ih;
+            if (w_ou > jaw_w) jaw_w = w_ou;
+            if (w_ee > jaw_w) jaw_w = w_ee;
+            if (w_oh > jaw_w) jaw_w = w_oh;
+            jaw_w *= 0.45f;
         }
 
-        /* Layer vowel weights on top of smooth_weights */
+        /* Apply top two vowel shapes only — visible but not muddy. */
         int lip_idx[5] = {
             ctx->lip_expr_aa, ctx->lip_expr_ih, ctx->lip_expr_ou,
             ctx->lip_expr_ee, ctx->lip_expr_oh
         };
         float vowel_w[5] = { w_aa, w_ih, w_ou, w_ee, w_oh };
-        for (int v = 0; v < 5; v++) {
-            if (lip_idx[v] >= 0 && vowel_w[v] > ctx->smooth_weights[lip_idx[v]])
+        int order[5] = {0, 1, 2, 3, 4};
+        for (int i = 0; i < 4; i++) {
+            for (int j = i + 1; j < 5; j++) {
+                if (vowel_w[order[j]] > vowel_w[order[i]]) {
+                    int tmp = order[i];
+                    order[i] = order[j];
+                    order[j] = tmp;
+                }
+            }
+        }
+        for (int k = 0; k < 2; k++) {
+            int v = order[k];
+            if (lip_idx[v] >= 0 && vowel_w[v] > 0.02f &&
+                vowel_w[v] > ctx->smooth_weights[lip_idx[v]]) {
                 ctx->smooth_weights[lip_idx[v]] = vowel_w[v];
+            }
+        }
+
+        if (ctx->lip_expr_jaw >= 0 && jaw_w > ctx->smooth_weights[ctx->lip_expr_jaw]) {
+            ctx->smooth_weights[ctx->lip_expr_jaw] = jaw_w;
         }
     }
 

@@ -31,6 +31,10 @@
 #include <libgen.h>
 
 #include "tuya_kconfig.h"
+
+#if defined(ENABLE_AUDIO_CODECS) && (ENABLE_AUDIO_CODECS == 1)
+#include "tdl_audio_manage.h"
+#endif
 #include "svc_ai_player.h"
 
 /**
@@ -329,6 +333,20 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
 
     /* ---- Audio-driven lip sync ---- */
     lip_sync_init(&s_lip_sync_ctx, 16000);
+#if defined(ENABLE_AUDIO_CODECS) && (ENABLE_AUDIO_CODECS == 1)
+    {
+        TDL_AUDIO_HANDLE_T audio_hdl = NULL;
+        if (tdl_audio_find(AUDIO_CODEC_NAME, &audio_hdl) == OPRT_OK) {
+            uint32_t delay_frames = 0;
+            if (tdl_audio_get_playback_delay_frames(audio_hdl, &delay_frames) == OPRT_OK) {
+                lip_sync_set_playback_delay_frames(&s_lip_sync_ctx, delay_frames);
+                printf("[lip_sync] initial playback delay: %u frames (~%d ms)\n",
+                       delay_frames,
+                       (int)(delay_frames * 1000U / (uint32_t)s_lip_sync_ctx.sample_rate));
+            }
+        }
+    }
+#endif
     emotion_set_lip_sync(&emo_ctx, &s_lip_sync_ctx);
 
     /* Register the chained consumer so decoded PCM is also fed to lip sync.
@@ -682,12 +700,33 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
             }
         }
 
-        /* ---- handle delayed speaking stop ---- */
+        /* ---- sync speaking state (audio thread -> render thread) ---- */
+        if (s_speaking_active && !emo_ctx.speaking) {
+            emotion_set_speaking(&emo_ctx, 1);
+        }
+
+        /* ---- handle delayed speaking stop (wait for ALSA buffer drain) ---- */
         if (s_speaking_stop_pending) {
+            Uint32 tail_ms = SPEAKING_FADE_MS;
+            int    delay_ms = s_lip_sync_ctx.delay_ms;
+
+            if (delay_ms > 0) {
+                Uint32 audio_tail = (Uint32)delay_ms + 40U;
+
+                if (audio_tail > tail_ms) {
+                    tail_ms = audio_tail;
+                }
+            }
+
             Uint32 elapsed = SDL_GetTicks() - s_speaking_stop_ticks;
-            if (elapsed >= SPEAKING_FADE_MS) {
+            if (elapsed >= tail_ms) {
                 s_speaking_stop_pending = 0;
+                s_speaking_active       = 0;
                 emotion_set_speaking(&emo_ctx, 0);
+                if (s_subtitle_clear_pending) {
+                    s_subtitle_clear_pending = 0;
+                    vrm_overlay_set_subtitle("");
+                }
             }
         }
 

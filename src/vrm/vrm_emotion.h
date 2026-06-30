@@ -88,6 +88,7 @@ typedef struct {
     int             lip_expr_ou;
     int             lip_expr_ee;
     int             lip_expr_oh;
+    int             lip_expr_jaw;
     lip_sync_ctx_t *lip_sync;
     float           total_time;
 } emotion_ctx_t;

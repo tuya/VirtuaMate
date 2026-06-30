@@ -29,6 +29,10 @@
 #include "tuya_kconfig.h"
 #include "svc_ai_player.h"
 
+#if defined(ENABLE_AUDIO_CODECS) && (ENABLE_AUDIO_CODECS == 1)
+#include "tdl_audio_manage.h"
+#endif
+
 /* ================================================================== */
 /*  Global state — shared with other modules via vrm_viewer_set_speaking */
 /* ================================================================== */
@@ -127,10 +131,22 @@ static OPERATE_RET __lc_write(PLAYER_CONSUMER_HANDLE handle,
                                const void *buf, uint32_t len)
 {
     (void)handle;
-    /* Feed decoded PCM to lip sync analysis (16 kHz, 16-bit, mono) */
+
     lip_sync_feed_pcm(&s_lip_sync_ctx, buf, len, 1, 16);
-    /* Forward to hardware speaker */
-    return g_consumer_speaker.write(s_speaker_handle, buf, len);
+
+    OPERATE_RET rt = g_consumer_speaker.write(s_speaker_handle, buf, len);
+
+#if defined(ENABLE_AUDIO_CODECS) && (ENABLE_AUDIO_CODECS == 1)
+    if (rt == OPRT_OK && s_speaker_handle) {
+        uint32_t delay_frames = 0;
+        if (tdl_audio_get_playback_delay_frames(
+                (TDL_AUDIO_HANDLE_T)s_speaker_handle, &delay_frames) == OPRT_OK) {
+            lip_sync_set_playback_delay_frames(&s_lip_sync_ctx, delay_frames);
+        }
+    }
+#endif
+
+    return rt;
 }
 
 static OPERATE_RET __lc_stop(PLAYER_CONSUMER_HANDLE handle)
@@ -195,19 +211,26 @@ const emotion_id_t s_idle_emotions[] = {
 
 volatile Uint32 s_speaking_stop_ticks   = 0;
 volatile int    s_speaking_stop_pending  = 0;
+volatile int    s_speaking_active        = 0;
+volatile int    s_subtitle_clear_pending = 0;
 
 void vrm_viewer_set_speaking(int speaking)
 {
     s_last_interact_ticks = SDL_GetTicks();
-    emotion_ctx_t *ctx = s_emo_ctx;
-    if (!ctx) return;
 
+    /*
+     * Audio player callbacks run on the ai_player thread; emotion_ctx is
+     * owned by the SDL render thread.  Only flip volatile flags here and
+     * let the render loop call emotion_set_speaking() on the correct thread.
+     */
     if (speaking) {
-        s_speaking_stop_pending = 0;
-        emotion_set_speaking(ctx, 1);
+        s_speaking_stop_pending    = 0;
+        s_subtitle_clear_pending   = 0;
+        s_speaking_active          = 1;
     } else {
-        s_speaking_stop_ticks  = SDL_GetTicks();
-        s_speaking_stop_pending = 1;
+        s_speaking_stop_ticks      = SDL_GetTicks();
+        s_speaking_stop_pending    = 1;
+        s_subtitle_clear_pending   = 1;
     }
 }
 
@@ -253,6 +276,7 @@ void vrm_viewer_clear_blendshapes(void)
 
 void vrm_viewer_set_subtitle(const char *text)
 {
+    s_subtitle_clear_pending = 0;
     vrm_overlay_set_subtitle(text);
 }
 
