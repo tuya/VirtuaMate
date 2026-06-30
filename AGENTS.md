@@ -120,7 +120,8 @@ VirtuaMate/
 │   ├── tool_files.c/h      #   File operations (read/write/edit/list/find)
 │   ├── tool_cron.c/h       #   Scheduled tasks (cron_add/list/remove)
 │   ├── tool_exec.c/h       #   Remote command execution (Linux only)
-│   └── tool_openclaw_ctrl.c/h # OpenClaw gateway control
+│   ├── tool_openclaw_ctrl.c/h # OpenClaw gateway control
+│   └── tool_avatar.c/h     #   VRM avatar MCP (animation, emotion, blend shapes)
 │
 ├── memory/                 # Persistent memory and session management
 │   ├── memory_manager.c/h  #   MEMORY.md, daily notes, SOUL.md, USER.md

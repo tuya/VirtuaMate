@@ -37,7 +37,7 @@ menu "VRM Viewer Config"
 
 config VRM_MODEL_PATH
     string "3D model file path (VRM/PMX/GLB/FBX)"
-    default "resources/models/Hayaseyuuka.vrm"
+    default ""
     help
       Path to the 3D model file to load.
       Supported formats: VRM, PMX, GLB, GLTF, FBX, OBJ, etc.
@@ -45,7 +45,7 @@ config VRM_MODEL_PATH
 
 config VRM_ANIM_DIR
     string "VRMA animation directory (optional)"
-    default "resources/animations"
+    default ""
     help
       Path to a directory containing .vrma animation files.
       All .vrma files will be loaded and can be switched at runtime.
@@ -65,7 +65,7 @@ config VRM_FULLSCREEN
 
 config VRM_SCENE_PARENT_DIR
     string "Scene parent directory (contains scene folders)"
-    default "resources/scenes"
+    default ""
     help
       Parent directory scanned for scene sub-folders (2D image or cubemap skybox).
       At runtime the settings panel lists each sub-directory for selection.

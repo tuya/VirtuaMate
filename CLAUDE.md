@@ -67,6 +67,7 @@ Device-side tools registered via `tools_register.c`:
 - `tool_files.c` - file operations (read_file, write_file, edit_file, list_dir, find_path)
 - `tool_exec.c` - remote code execution (Raspberry Pi)
 - `tool_openclaw_ctrl.c` - OpenClaw gateway control
+- `tool_avatar.c` - VRM avatar control (avatar_play_animation, avatar_set_emotion, etc.)
 
 ### Memory (`memory/`)
 - `memory_manager.c` - persistent memory on flash/SD: MEMORY.md (long-term), daily notes (YYYY-MM-DD.md), SOUL.md, USER.md
