@@ -39,6 +39,7 @@
 /***********************************************************
 ***********************variable define**********************
 ***********************************************************/
+static bool __s_nlg_in_stream = false;
 
 /***********************************************************
 ***********************function define**********************
@@ -185,12 +186,12 @@ static OPERATE_RET __ai_nlg_process(cJSON *root, bool eof)
     cJSON_free(json_str);
 
     cJSON *nlgResult = cJSON_GetObjectItem(root, "nlgResult");
-    if(nlgResult) {
+    if (nlgResult) {
 #if defined(ENABLE_COMP_AI_PICTURE) && (ENABLE_COMP_AI_PICTURE == 1)
-        if(ai_picture_is_init() == true) {
-            if(__ai_images_process(nlgResult) != OPRT_OK) {
+        if (ai_picture_is_init() == true) {
+            if (__ai_images_process(nlgResult) != OPRT_OK) {
                 PR_NOTICE("process nlg images failed");
-            }else {
+            } else {
                 PR_NOTICE("process nlg images success");
             }
         }
@@ -206,27 +207,30 @@ static OPERATE_RET __ai_nlg_process(cJSON *root, bool eof)
     AI_NOTIFY_TEXT_T text;
     text.data      = (char *)content;
     text.datalen   = strlen(content);
-    PR_NOTICE("text -> NLG eof: %d, content: %s, time: %d", eof, content, text.timeindex);
 
-    /* Send data to register callback */
-    static AI_USER_EVT_TYPE_E event_type = AI_USER_EVT_TEXT_STREAM_STOP;
-    if(event_type == AI_USER_EVT_TEXT_STREAM_STOP) {
-        if(eof) {
-            if(strlen(content) > 0) {
-                ai_user_event_notify(AI_USER_EVT_TEXT_STREAM_START, &text);
-                text.data = NULL;
-                text.datalen = 0;
-                ai_user_event_notify(AI_USER_EVT_TEXT_STREAM_STOP, &text);
-                event_type = AI_USER_EVT_TEXT_STREAM_STOP;
+    cJSON *time_idx = cJSON_GetObjectItem(root, "timeIndex");
+    text.timeindex = time_idx ? (uint32_t)time_idx->valueint : 0;
+
+    PR_NOTICE("text -> NLG eof: %d, content: %s, time: %u", eof, content, text.timeindex);
+
+    if (!__s_nlg_in_stream) {
+        if (strlen(content) > 0) {
+            ai_user_event_notify(AI_USER_EVT_TEXT_STREAM_START, &text);
+            if (eof) {
+                AI_NOTIFY_TEXT_T empty = {.data = NULL, .datalen = 0, .timeindex = 0};
+                ai_user_event_notify(AI_USER_EVT_TEXT_STREAM_STOP, &empty);
+            } else {
+                __s_nlg_in_stream = true;
             }
-        }else {
-            ai_user_event_notify(AI_USER_EVT_TEXT_STREAM_START, &text); 
-            event_type = AI_USER_EVT_TEXT_STREAM_DATA;
+        } else if (eof) {
+            ai_user_event_notify(AI_USER_EVT_TEXT_STREAM_STOP, &text);
         }
     } else {
-        if (event_type == AI_USER_EVT_TEXT_STREAM_DATA) {
-            ai_user_event_notify(eof?AI_USER_EVT_TEXT_STREAM_STOP:AI_USER_EVT_TEXT_STREAM_DATA, &text);
-            event_type = eof?AI_USER_EVT_TEXT_STREAM_STOP:AI_USER_EVT_TEXT_STREAM_DATA;
+        if (eof) {
+            ai_user_event_notify(AI_USER_EVT_TEXT_STREAM_STOP, &text);
+            __s_nlg_in_stream = false;
+        } else {
+            ai_user_event_notify(AI_USER_EVT_TEXT_STREAM_DATA, &text);
         }
     }
 
@@ -239,8 +243,7 @@ static OPERATE_RET __ai_nlg_process(cJSON *root, bool eof)
             emo.name = ai_agent_emoji_get_name(emoji);
             ai_agent_play_emo(&emo);
         }
-    }  
-
+    }
 
     return OPRT_OK;
 }

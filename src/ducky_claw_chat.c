@@ -21,6 +21,7 @@
 
 #ifdef VRM_MODEL_PATH
 #include "vrm_renderer.h"
+#include "vrm_text_timeline.h"
 #include "vrm_text_emotion.h"
 #endif
 
@@ -229,6 +230,7 @@ static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
         data_write_offset = 0;
 #ifdef VRM_MODEL_PATH
         text_emotion_reset();
+        vrm_text_timeline_reset();
 #endif
 
         AI_NOTIFY_TEXT_T *text = (AI_NOTIFY_TEXT_T *)event->data;
@@ -237,10 +239,13 @@ static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
             data_write_offset += text->datalen;
 #ifdef VRM_MODEL_PATH
             text_emotion_feed((const char *)text->data, (int)text->datalen);
+            vrm_text_timeline_append(text->data, text->datalen, text->timeindex);
 #endif
         }
 #ifdef VRM_MODEL_PATH
-        vrm_viewer_set_subtitle((char *)stream_data);
+        if (!vrm_text_timeline_is_active()) {
+            vrm_viewer_set_subtitle((char *)stream_data);
+        }
 #endif
     } break;
     case AI_USER_EVT_TEXT_STREAM_DATA: {
@@ -260,8 +265,11 @@ static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
 #ifdef VRM_MODEL_PATH
         if (text && text->data && text->datalen > 0) {
             text_emotion_feed((const char *)text->data, (int)text->datalen);
+            vrm_text_timeline_append(text->data, text->datalen, text->timeindex);
         }
-        vrm_viewer_set_subtitle((char *)stream_data);
+        if (!vrm_text_timeline_is_active()) {
+            vrm_viewer_set_subtitle((char *)stream_data);
+        }
 #endif
     } break;
     case AI_USER_EVT_TEXT_STREAM_STOP: {
@@ -278,7 +286,10 @@ static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
         }
 #ifdef VRM_MODEL_PATH
         text_emotion_flush();
-        if (stream_data && stream_data[0] != '\0') {
+        if (text && text->datalen > 0 && text->data) {
+            vrm_text_timeline_append(text->data, text->datalen, text->timeindex);
+        }
+        if (!vrm_text_timeline_is_active() && stream_data && stream_data[0] != '\0') {
             vrm_viewer_set_subtitle((char *)stream_data);
         }
 #endif
@@ -318,6 +329,7 @@ static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
     case AI_USER_EVT_CHAT_BREAK:
     case AI_USER_EVT_TEXT_STREAM_ABORT: {
 #ifdef VRM_MODEL_PATH
+        vrm_text_timeline_reset();
         vrm_viewer_set_subtitle("");
         vrm_viewer_set_speaking(0);
 #endif

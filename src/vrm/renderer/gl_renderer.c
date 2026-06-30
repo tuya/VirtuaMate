@@ -12,6 +12,7 @@
 #include "vrm_emotion.h"
 #include "vrm_spring_bone.h"
 #include "vrm_lip_sync.h"
+#include "vrm_text_timeline.h"
 #include "vrm_skybox.h"
 #include "vrm_bg2d.h"
 #include "vrm_overlay.h"
@@ -30,11 +31,6 @@
 #include <string.h>
 #include <libgen.h>
 
-#include "tuya_kconfig.h"
-
-#if defined(ENABLE_AUDIO_CODECS) && (ENABLE_AUDIO_CODECS == 1)
-#include "tdl_audio_manage.h"
-#endif
 #include "svc_ai_player.h"
 
 /**
@@ -331,22 +327,8 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
     emotion_id_t cur_emo = EMOTION_NEUTRAL;
     Uint32 last_frame_ticks = SDL_GetTicks();
 
-    /* ---- Audio-driven lip sync ---- */
+    /* ---- Audio-driven lip sync (delay from LIP_SYNC_FALLBACK_DELAY_MS) ---- */
     lip_sync_init(&s_lip_sync_ctx, 16000);
-#if defined(ENABLE_AUDIO_CODECS) && (ENABLE_AUDIO_CODECS == 1)
-    {
-        TDL_AUDIO_HANDLE_T audio_hdl = NULL;
-        if (tdl_audio_find(AUDIO_CODEC_NAME, &audio_hdl) == OPRT_OK) {
-            uint32_t delay_frames = 0;
-            if (tdl_audio_get_playback_delay_frames(audio_hdl, &delay_frames) == OPRT_OK) {
-                lip_sync_set_playback_delay_frames(&s_lip_sync_ctx, delay_frames);
-                printf("[lip_sync] initial playback delay: %u frames (~%d ms)\n",
-                       delay_frames,
-                       (int)(delay_frames * 1000U / (uint32_t)s_lip_sync_ctx.sample_rate));
-            }
-        }
-    }
-#endif
     emotion_set_lip_sync(&emo_ctx, &s_lip_sync_ctx);
 
     /* Register the chained consumer so decoded PCM is also fed to lip sync.
@@ -705,6 +687,18 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
             emotion_set_speaking(&emo_ctx, 1);
         }
 
+        /* ---- cloud timeIndex subtitle + lip sync timeline ---- */
+        if (vrm_text_timeline_is_active()) {
+            char timeline_sub[768];
+
+            lip_sync_set_timeline_sync(&s_lip_sync_ctx, 1);
+            vrm_text_timeline_set_stream_ms(lip_sync_get_stream_ms(&s_lip_sync_ctx));
+            vrm_text_timeline_build_visible(timeline_sub, sizeof(timeline_sub));
+            vrm_overlay_set_subtitle(timeline_sub);
+        } else {
+            lip_sync_set_timeline_sync(&s_lip_sync_ctx, 0);
+        }
+
         /* ---- handle delayed speaking stop (wait for ALSA buffer drain) ---- */
         if (s_speaking_stop_pending) {
             Uint32 tail_ms = SPEAKING_FADE_MS;
@@ -726,6 +720,7 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                 if (s_subtitle_clear_pending) {
                     s_subtitle_clear_pending = 0;
                     vrm_overlay_set_subtitle("");
+                    vrm_text_timeline_reset();
                 }
             }
         }

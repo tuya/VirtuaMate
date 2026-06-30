@@ -9,9 +9,9 @@
  *
  * Playback delay compensation:
  *   PCM is analysed when written to the audio driver, but sound is heard later.
- *   During playback the driver reports live buffer delay (ALSA snd_pcm_delay);
- *   before playback starts we fall back to buffer+period from driver config.
- *   No fixed millisecond constant is required across boards or buffer sizes.
+ *   A fixed fallback delay (LIP_SYNC_FALLBACK_DELAY_MS in lip_sync.c) shifts
+ *   the mouth shape backward in time so it aligns with heard audio.  Tune that
+ *   constant per board if needed — no TuyaOpen SDK changes required.
  *
  * @version 1.1
  * @date 2025-06-30
@@ -59,6 +59,7 @@ typedef struct {
     int             sample_rate;
     int             delay_ms;
     uint32_t        live_delay_samples;
+    int             timeline_sync;
 } lip_sync_ctx_t;
 
 /**
@@ -70,12 +71,28 @@ typedef struct {
 void lip_sync_init(lip_sync_ctx_t *ctx, int sample_rate);
 
 /**
- * @brief Update live playback delay used for lip-sync history lookup.
+ * @brief Override playback delay used for lip-sync history lookup.
  * @param[in] ctx          Lip sync context.
- * @param[in] delay_frames Delay in PCM frames (from tdl_audio_get_playback_delay_frames).
+ * @param[in] delay_frames Delay in PCM frames at ctx->sample_rate.
  * @return none
+ * @note Optional; lip_sync_init() already sets a sensible fallback delay.
  */
 void lip_sync_set_playback_delay_frames(lip_sync_ctx_t *ctx, uint32_t delay_frames);
+
+/**
+ * @brief Enable cloud-timeline sync (reduces playback delay compensation).
+ * @param[in] ctx     Lip sync context.
+ * @param[in] enabled Non-zero when NLG timeIndex timeline is active.
+ * @return none
+ */
+void lip_sync_set_timeline_sync(lip_sync_ctx_t *ctx, int enabled);
+
+/**
+ * @brief Current stream position in milliseconds from fed PCM samples.
+ * @param[in] ctx Lip sync context.
+ * @return Stream position in ms.
+ */
+uint32_t lip_sync_get_stream_ms(const lip_sync_ctx_t *ctx);
 
 /**
  * @brief Feed a block of decoded PCM to update vowel weights.

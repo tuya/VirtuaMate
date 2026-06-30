@@ -12,6 +12,7 @@
 #include "vrm_emotion.h"
 #include "vrm_spring_bone.h"
 #include "vrm_lip_sync.h"
+#include "vrm_text_timeline.h"
 #include "vrm_skybox.h"
 #include "vrm_overlay.h"
 
@@ -26,12 +27,7 @@
 #include <string.h>
 #include <libgen.h>
 
-#include "tuya_kconfig.h"
 #include "svc_ai_player.h"
-
-#if defined(ENABLE_AUDIO_CODECS) && (ENABLE_AUDIO_CODECS == 1)
-#include "tdl_audio_manage.h"
-#endif
 
 /* ================================================================== */
 /*  Global state — shared with other modules via vrm_viewer_set_speaking */
@@ -134,19 +130,11 @@ static OPERATE_RET __lc_write(PLAYER_CONSUMER_HANDLE handle,
 
     lip_sync_feed_pcm(&s_lip_sync_ctx, buf, len, 1, 16);
 
-    OPERATE_RET rt = g_consumer_speaker.write(s_speaker_handle, buf, len);
-
-#if defined(ENABLE_AUDIO_CODECS) && (ENABLE_AUDIO_CODECS == 1)
-    if (rt == OPRT_OK && s_speaker_handle) {
-        uint32_t delay_frames = 0;
-        if (tdl_audio_get_playback_delay_frames(
-                (TDL_AUDIO_HANDLE_T)s_speaker_handle, &delay_frames) == OPRT_OK) {
-            lip_sync_set_playback_delay_frames(&s_lip_sync_ctx, delay_frames);
-        }
+    if (vrm_text_timeline_is_active()) {
+        vrm_text_timeline_set_stream_ms(lip_sync_get_stream_ms(&s_lip_sync_ctx));
     }
-#endif
 
-    return rt;
+    return g_consumer_speaker.write(s_speaker_handle, buf, len);
 }
 
 static OPERATE_RET __lc_stop(PLAYER_CONSUMER_HANDLE handle)

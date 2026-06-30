@@ -27,11 +27,13 @@
 #define LIP_SYNC_MAX_WEIGHT       0.68f
 #define LIP_SYNC_JAW_GAIN         0.72f
 
+#define LIP_SYNC_TIMELINE_DELAY_MS  24
+
 /*
- * Fallback delay before the first playback chunk (ms) if live delay is unknown.
- * Replaced automatically once audio starts and snd_pcm_delay is available.
+ * Estimated speaker buffer delay (ms) when not using cloud timeIndex timeline.
+ * PCM analysis runs when audio is written to the driver; sound is heard later.
  */
-#define LIP_SYNC_FALLBACK_DELAY_MS  80
+#define LIP_SYNC_FALLBACK_DELAY_MS  96
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -78,8 +80,9 @@ static const lip_sync_hist_t *__hist_lookup(const lip_sync_ctx_t *ctx)
 
     uint32_t delay_samples = ctx->live_delay_samples;
     if (delay_samples == 0) {
+        int delay_ms = ctx->timeline_sync ? LIP_SYNC_TIMELINE_DELAY_MS : ctx->delay_ms;
         delay_samples =
-            (uint32_t)((int64_t)ctx->delay_ms * ctx->sample_rate / 1000);
+            (uint32_t)((int64_t)delay_ms * ctx->sample_rate / 1000);
     }
 
     uint32_t target = (ctx->total_samples > delay_samples)
@@ -129,6 +132,25 @@ void lip_sync_set_playback_delay_frames(lip_sync_ctx_t *ctx, uint32_t delay_fram
             ctx->delay_ms = 20;
         }
     }
+}
+
+void lip_sync_set_timeline_sync(lip_sync_ctx_t *ctx, int enabled)
+{
+    if (!ctx) {
+        return;
+    }
+
+    ctx->timeline_sync = enabled ? 1 : 0;
+}
+
+uint32_t lip_sync_get_stream_ms(const lip_sync_ctx_t *ctx)
+{
+    if (!ctx || ctx->sample_rate <= 0) {
+        return 0;
+    }
+
+    return (uint32_t)((uint64_t)ctx->total_samples * 1000ULL /
+                      (uint32_t)ctx->sample_rate);
 }
 
 void lip_sync_feed_pcm(lip_sync_ctx_t *ctx,
