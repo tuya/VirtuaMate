@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-DuckyClaw is a Linux-oriented AI agent built on the TuyaOpen C SDK (PLATFORM_LINUX). It runs a Claw-style agent loop on Ubuntu, Raspberry Pi, and other Linux boards, communicates via IM channels, and executes MCP-style tools on the device.
+VirtuaMate is a Linux-oriented AI agent with a 3D VRM avatar, built on the TuyaOpen C SDK (PLATFORM_LINUX) and the TuyaOpenClaw agent stack. It runs on Ubuntu, Raspberry Pi, and other Linux boards, communicates via IM channels, and executes MCP-style tools on the device.
 
 ## Build Commands
 
-DuckyClaw builds as a TuyaOpen application. From the repo root:
+VirtuaMate builds as a TuyaOpen application. From the repo root:
 
 ```bash
 # Initialize TuyaOpen environment (creates .venv, exports OPEN_SDK_ROOT)
@@ -20,7 +20,7 @@ cp config/Ubuntu.config app_default.config           # Linux x64 (default)
 cp config/RaspberryPi.config app_default.config      # Raspberry Pi
 cp config/DshanPi_A1.config app_default.config       # DshanPi A1 (ARM Linux)
 
-# Build (from TuyaOpen directory, pointing to DuckyClaw as the app)
+# Build (from TuyaOpen directory, pointing to VirtuaMate as the app)
 cd TuyaOpen
 python3 tos.py build
 
@@ -48,7 +48,7 @@ The secrets file is gitignored. Defaults live in `include/tuya_app_config.h`.
 The core is a synchronous outer+inner loop in `agent_loop.c`:
 - **Outer loop**: blocks on `message_bus_pop_inbound()` waiting for user messages from any IM channel
 - **Inner loop** (up to `TOOL_LOOP_MAX=10` iterations): sends prompt to cloud AI via `ai_agent_send_text()`, blocks on a semaphore until the AI turn completes, checks if a tool was called, and either loops (feeding tool result back) or forwards the final response to IM
-- Synchronization: `ducky_claw_chat.c` receives streaming AI events and calls `agent_loop_notify_turn_done()` on `AI_USER_EVT_END`
+- Synchronization: `tuyaopen_claw_chat.c` receives streaming AI events and calls `agent_loop_notify_turn_done()` on `AI_USER_EVT_END`
 - Tool results are captured by `__on_tool_executed` hook (registered via `ai_mcp_server_set_tool_exec_hook`)
 
 ### Context Builder (`agent/context_builder.c`)

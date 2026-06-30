@@ -1,4 +1,4 @@
-menu "configure app (DuckyClaw / Linux)"
+menu "configure app (VirtuaMate / Linux)"
 
     config SYS_BUS_OUTBOUND_STACK_SIZE
         int "SYS bus outbound thread stack size (bytes)"
@@ -12,11 +12,25 @@ menu "configure app (DuckyClaw / Linux)"
         help
             Stack size in bytes for the IM bridge thread (default 4*1024).
 
-rsource "./ai_components/Kconfig"
+config VIRTUAMATE_USE_AI_COMPONENTS
+    bool
+    default y
+    select ENABLE_AI_COMPONENTS
+    select ENABLE_AI_CHAT_CUSTOM_UI
+
+config VIRTUAMATE_USE_EXT_RAM
+    bool "Enable external PSRAM heap (SoC boards with PSRAM)"
+    default n
+    select ENABLE_EXT_RAM
+    help
+      Enable ENABLE_EXT_RAM so claw_malloc and im_calloc may use PSRAM.
+      Leave disabled on Ubuntu/x64. Enable on boards that provide PSRAM.
+
 rsource "./cron_service/Kconfig"
 rsource "./gateway/Kconfig"
 rsource "./IM/Kconfig"
 rsource "./agent/Kconfig"
+rsource "./components/lua/Kconfig"
 rsource "./tools/Kconfig"
 
 menu "VRM Viewer Config"

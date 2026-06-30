@@ -1,6 +1,6 @@
 /**
  * @file ws_server.h
- * @brief WebSocket server for DuckyClaw gateway
+ * @brief WebSocket server for TuyaOpenClaw gateway
  *
  * Provides a lightweight WebSocket server that accepts external client
  * connections. Text messages received from clients are forwarded to the
@@ -22,6 +22,10 @@
 
 #ifndef CLAW_WS_MAX_CLIENTS
 #define CLAW_WS_MAX_CLIENTS   4
+#endif
+
+#ifndef CLAW_WS_CLIENT_RX_BUF_SIZE
+#define CLAW_WS_CLIENT_RX_BUF_SIZE 4096
 #endif
 
 #ifndef CLAW_WS_TOKEN_MAX_LEN

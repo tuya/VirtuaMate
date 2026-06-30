@@ -1,6 +1,6 @@
 /**
  * @file heartbeat.h
- * @brief Heartbeat service for DuckyClaw
+ * @brief Heartbeat service for VirtuaMate / TuyaOpenClaw
  * @version 0.1
  * @date 2025-03-25
  *

@@ -106,7 +106,7 @@ static int __find_repo_font_from(char *base, char *out_path, size_t out_sz)
 
 static int __locate_subtitle_font(char *out_path, size_t out_sz, int *out_index)
 {
-    const char *env = getenv("DUCKYCLAW_SUBTITLE_FONT");
+    const char *env = getenv("VIRTUAMATE_SUBTITLE_FONT");
     if (env && env[0] != '\0' && __path_exists(env)) {
         strncpy(out_path, env, out_sz - 1);
         out_path[out_sz - 1] = '\0';
@@ -180,7 +180,7 @@ int __subtitle_font_init(void)
     int font_index = 0;
     if (!__locate_subtitle_font(path, sizeof(path), &font_index)) {
         fprintf(stderr, "[ovl] subtitle font not found — "
-                "set DUCKYCLAW_SUBTITLE_FONT=/path/to/font.ttf\n");
+                "set VIRTUAMATE_SUBTITLE_FONT=/path/to/font.ttf\n");
         return 0;
     }
 

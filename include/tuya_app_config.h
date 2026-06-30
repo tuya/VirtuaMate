@@ -83,8 +83,8 @@
  #define OPENCLAW_GATEWAY_TOKEN   ""              /* Set in tuya_app_config_secrets.h */
  #endif
  
- #ifndef DUCKYCLAW_DEVICE_ID
- #define DUCKYCLAW_DEVICE_ID       "duckyclaw-001" /* Unique per device, e.g. MAC address */
+ #ifndef TUYAOPENCLAW_DEVICE_ID
+ #define TUYAOPENCLAW_DEVICE_ID       "virtuamate-001" /* Unique per device, e.g. MAC address */
  #endif
  
  #ifdef __cplusplus

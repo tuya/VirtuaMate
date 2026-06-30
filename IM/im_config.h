@@ -138,6 +138,26 @@
 #define IM_QQ_GATEWAY_RX_BUF_SIZE  (32 * 1024)
 #endif
 
+/* ---- Weixin ---- */
+
+#ifndef IM_WX_UPDATES_BUF_SIZE
+#define IM_WX_UPDATES_BUF_SIZE     4096
+#endif
+
+/* ---- Feishu dedup (Kconfig override when generated) ---- */
+
+#ifndef IM_FS_DEDUP_CACHE_SIZE
+#define IM_FS_DEDUP_CACHE_SIZE     512
+#endif
+
+#ifndef IM_TG_DEDUP_CACHE_SIZE
+#define IM_TG_DEDUP_CACHE_SIZE     64
+#endif
+
+#ifndef IM_QQ_DEDUP_CACHE_SIZE
+#define IM_QQ_DEDUP_CACHE_SIZE     64
+#endif
+
 /* ---- Message bus / outbound ---- */
 
 #define IM_BUS_QUEUE_LEN           10
