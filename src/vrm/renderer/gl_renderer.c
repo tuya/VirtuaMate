@@ -13,6 +13,7 @@
 #include "vrm_spring_bone.h"
 #include "vrm_lip_sync.h"
 #include "vrm_text_timeline.h"
+#include "vrm_emotion_timeline.h"
 #include "vrm_skybox.h"
 #include "vrm_bg2d.h"
 #include "vrm_overlay.h"
@@ -687,7 +688,7 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
             emotion_set_speaking(&emo_ctx, 1);
         }
 
-        /* ---- cloud timeIndex subtitle + lip sync timeline ---- */
+        /* ---- cloud timeIndex subtitle + lip sync + emotion timeline ---- */
         if (vrm_text_timeline_is_active()) {
             char timeline_sub[768];
 
@@ -697,6 +698,11 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
             vrm_overlay_set_subtitle(timeline_sub);
         } else {
             lip_sync_set_timeline_sync(&s_lip_sync_ctx, 0);
+        }
+
+        if (vrm_emotion_timeline_is_active()) {
+            vrm_emotion_timeline_set_stream_ms(lip_sync_get_stream_ms(&s_lip_sync_ctx));
+            vrm_emotion_timeline_tick();
         }
 
         /* ---- handle delayed speaking stop (wait for ALSA buffer drain) ---- */
@@ -721,6 +727,7 @@ int vrm_viewer_run(const char *model_path, const char *vrma_dir)
                     s_subtitle_clear_pending = 0;
                     vrm_overlay_set_subtitle("");
                     vrm_text_timeline_reset();
+                    vrm_emotion_timeline_reset();
                 }
             }
         }

@@ -23,7 +23,7 @@
 #ifdef VRM_MODEL_PATH
 #include "vrm_renderer.h"
 #include "vrm_text_timeline.h"
-#include "vrm_text_emotion.h"
+#include "vrm_emotion_timeline.h"
 #endif
 
 #if defined(ENABLE_WIFI) && (ENABLE_WIFI == 1)
@@ -230,8 +230,8 @@ static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
         memset(stream_data, 0, STREAM_DATA_MAX_LEN);
         data_write_offset = 0;
 #ifdef VRM_MODEL_PATH
-        text_emotion_reset();
         vrm_text_timeline_reset();
+        vrm_emotion_timeline_reset();
 #endif
 
         AI_NOTIFY_TEXT_T *text = (AI_NOTIFY_TEXT_T *)event->data;
@@ -239,7 +239,6 @@ static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
             memcpy(stream_data + data_write_offset, text->data, text->datalen);
             data_write_offset += text->datalen;
 #ifdef VRM_MODEL_PATH
-            text_emotion_feed((const char *)text->data, (int)text->datalen);
             vrm_text_timeline_append(text->data, text->datalen, text->timeindex);
 #endif
         }
@@ -265,7 +264,6 @@ static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
         data_write_offset += text->datalen;
 #ifdef VRM_MODEL_PATH
         if (text && text->data && text->datalen > 0) {
-            text_emotion_feed((const char *)text->data, (int)text->datalen);
             vrm_text_timeline_append(text->data, text->datalen, text->timeindex);
         }
         if (!vrm_text_timeline_is_active()) {
@@ -286,7 +284,6 @@ static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
             stream_data[data_write_offset] = '\0';
         }
 #ifdef VRM_MODEL_PATH
-        text_emotion_flush();
         if (text && text->datalen > 0 && text->data) {
             vrm_text_timeline_append(text->data, text->datalen, text->timeindex);
         }
@@ -312,7 +309,14 @@ static void __ai_chat_handle_event(AI_NOTIFY_EVENT_T *event)
         AI_NOTIFY_EMO_T *emo = (AI_NOTIFY_EMO_T *)(event->data);
         if (emo && emo->name) {
             vrm_viewer_set_emotion(emo->name, 1.0f, 0.0f);
-            text_emotion_set_base(emo->name);
+        }
+#endif
+    } break;
+    case AI_USER_EVT_EMOTION_TIMELINE: {
+#ifdef VRM_MODEL_PATH
+        AI_NOTIFY_EMO_TIMELINE_T *cue = (AI_NOTIFY_EMO_TIMELINE_T *)(event->data);
+        if (cue && cue->name && cue->name[0] != '\0') {
+            vrm_emotion_timeline_append(cue->name, cue->time_ms, cue->intensity);
         }
 #endif
     } break;
